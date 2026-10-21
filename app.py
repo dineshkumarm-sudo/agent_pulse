@@ -90,39 +90,15 @@ def calculate_productivity(df):
 
     result = df.copy()
 
-    new_col = find_column(
-        result,
-        [
-            "New Listings Count",
-            "New Listing Count",
-            "New Listings",
-            "New Listing",
-            "New Listing Qty",
-            "New Listings Qty",
-            "New Listings Completed",
-            "New Listing Completed",
-            "New Listings Production",
-            "New Listings SKU Count",
-        ],
-    )
+ new_col = find_column(
+    result,
+    ["New Listings"],
+)
 
     existing_col = find_column(
-        result,
-        [
-            "Existing Listings Count",
-            "Existing Listing Count",
-            "Existing Listings",
-            "Existing Listing",
-            "Existing Listing Qty",
-            "Existing Listings Qty",
-            "Listing Updates Count",
-            "Listing Update Count",
-            "Existing Listings Completed",
-            "Existing Listing Completed",
-            "Existing Listings Production",
-            "Existing Listings SKU Count",
-        ],
-    )
+    result,
+    ["Listing Update"],
+)
 
     hours_col = find_column(
         result,
