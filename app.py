@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from src.gsheets_client import fetch_daily_tracker_data, analyze_project_productivity
+import re
+from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import collate_coo_report
 
 st.set_page_config(page_title="Nexus AI", layout="wide")
@@ -20,14 +21,29 @@ selected_project = st.selectbox(
 )
 sheet_url = PROJECT_SHEETS[selected_project]
 
-# Fetch data using the full URL mapped to the selected project name
-try:
-    df_raw = fetch_daily_tracker_data(sheet_url)
-except Exception as e:
-    st.error(f"Error connecting to Google Sheet for **{selected_project}**. Please verify that your service account email (`agent-pulse@...`) has Viewer/Editor access to the sheet.")
-    st.stop()
+# Helper function to open sheet safely via Key/ID or URL
+def fetch_sheet_safely(url: str, sheet_name: str = "Daily_Tracker") -> pd.DataFrame:
+    client = get_gsheet_client()
+    # Extract spreadsheet key/ID directly from URL string
+    match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
+    if match:
+        spreadsheet_id = match.group(1)
+        sheet = client.open_by_key(spreadsheet_id)
+    else:
+        sheet = client.open_by_url(url)
+    
+    worksheet = sheet.worksheet(sheet_name)
+    records = worksheet.get_all_records()
+    return pd.DataFrame(records)
 
-# --- 2. MONTH, YEAR, AND WEEK FILTERS ---
+# --- 2. SAFELY LOAD INITIAL DATA FOR FILTERS ---
+df_raw = pd.DataFrame()
+try:
+    df_raw = fetch_sheet_safely(sheet_url)
+except Exception as e:
+    st.warning(f"⚠️ Could not load sheet data for **{selected_project}**. Verify that `agent-pulse@agent-pulse-512311.iam.gserviceaccount.com` is added as an **Editor/Viewer** on the Google Sheet.")
+
+# --- 3. MONTH, YEAR, AND WEEK FILTERS ---
 st.subheader("Filter Data")
 filter_col1, filter_col2, filter_col3 = st.columns(3)
 
@@ -44,20 +60,24 @@ with filter_col3:
 
 # Apply dynamic filters
 df_filtered = df_raw.copy()
-if "Year" in df_filtered.columns and selected_year != "All":
-    df_filtered = df_filtered[df_filtered["Year"].astype(str) == selected_year]
-if "Month" in df_filtered.columns and selected_month != "All":
-    df_filtered = df_filtered[df_filtered["Month"].astype(str) == selected_month]
-if "Week" in df_filtered.columns and selected_week != "All":
-    df_filtered = df_filtered[df_filtered["Week"].astype(str) == selected_week]
+if not df_filtered.empty:
+    if "Year" in df_filtered.columns and selected_year != "All":
+        df_filtered = df_filtered[df_filtered["Year"].astype(str) == selected_year]
+    if "Month" in df_filtered.columns and selected_month != "All":
+        df_filtered = df_filtered[df_filtered["Month"].astype(str) == selected_month]
+    if "Week" in df_filtered.columns and selected_week != "All":
+        df_filtered = df_filtered[df_filtered["Week"].astype(str) == selected_week]
 
-# --- 3. EXECUTION BUTTON & ANALYSIS ---
+# --- 4. EXECUTION BUTTON & ANALYSIS ---
 if st.button("⚡ Execute Tracker Analysis", type="primary"):
-    analysis_results = analyze_project_productivity(df_filtered)
-    st.session_state["analysis_results"] = analysis_results
-    st.success(f"Analysis completed for **{selected_project}**!")
+    if df_filtered.empty:
+        st.error("Cannot run analysis: No data fetched from Google Sheets.")
+    else:
+        analysis_results = analyze_project_productivity(df_filtered)
+        st.session_state["analysis_results"] = analysis_results
+        st.success(f"Analysis completed for **{selected_project}**!")
 
-# --- 4. RIGHT SIDE AUDIT PANEL (WITH FIXED HTML RENDERING) ---
+# --- 5. RIGHT SIDE AUDIT PANEL ---
 if "analysis_results" in st.session_state:
     results = st.session_state["analysis_results"]
     daily_alerts = results.get("daily_alerts", pd.DataFrame())
