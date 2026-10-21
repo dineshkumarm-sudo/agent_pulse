@@ -46,6 +46,12 @@ def parse_productivity(series):
     )
 
 
+def parse_date_series(series):
+    """Parse tracker dates such as '6-Oct-2025' consistently."""
+    # dayfirst=True correctly handles dates like 6-Oct-2025 and 06/10/2025.
+    return pd.to_datetime(series, errors="coerce", dayfirst=True)
+
+
 def parse_count(series):
     return pd.to_numeric(
         series.astype(str)
@@ -160,7 +166,7 @@ def fetch_sheet_safely(url, sheet_name="Daily_Tracker"):
 
 
 def get_last_week_data(df, date_col):
-    dates = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
+    dates = parse_date_series(df[date_col])
     today = pd.Timestamp.today().normalize()
     this_monday = today - pd.Timedelta(days=today.weekday())
     previous_monday = this_monday - pd.Timedelta(days=7)
@@ -187,7 +193,7 @@ def build_productivity_chart(df):
     chart_df = df.copy()
     chart_df["_productivity"] = parse_productivity(chart_df["Productivity (%)"])
     if date_col:
-        chart_df["_date"] = pd.to_datetime(chart_df[date_col], errors="coerce", dayfirst=True)
+        chart_df["_date"] = parse_date_series(chart_df[date_col])
         chart_df = chart_df.dropna(subset=["_date"])
         x_col, x_title = "_date", "Date"
     else:
@@ -349,18 +355,15 @@ if sheet_error:
 
 if not df_raw.empty:
     filter_col1, filter_col2, filter_col3 = st.columns(3)
-    current_year = datetime.datetime.now().year
-    default_years = [str(year) for year in range(2025, current_year + 1)]
-    year_col = find_column(df_raw, ["Year"])
+    date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
     month_col = find_column(df_raw, ["Month"])
     week_col = find_column(df_raw, ["Week"])
 
-    if year_col:
-        sheet_years = [str(value) for value in df_raw[year_col].dropna().unique() if str(value).strip()]
-        combined_years = sorted(set(default_years + sheet_years))
-    else:
-        combined_years = default_years
-    years = ["All"] + combined_years
+    # The Date column is the source of truth for year filtering. Do not rely on
+    # a separate Year field, which may be missing, stale, or incorrectly filled.
+    parsed_dates = parse_date_series(df_raw[date_col]) if date_col else pd.Series(pd.NaT, index=df_raw.index)
+    date_years = sorted(parsed_dates.dropna().dt.year.unique().tolist())
+    years = ["All"] + [str(year) for year in date_years]
     months = ["All"] + sorted(df_raw[month_col].dropna().astype(str).unique()) if month_col else ["All"]
     weeks = ["All"] + sorted(df_raw[week_col].dropna().astype(str).unique()) if week_col else ["All"]
 
@@ -372,8 +375,12 @@ if not df_raw.empty:
         selected_week = st.selectbox("Week", weeks)
 
     df_filtered = df_raw.copy()
-    if year_col and selected_year != "All":
-        df_filtered = df_filtered[df_filtered[year_col].astype(str) == selected_year]
+    if selected_year != "All":
+        if date_col:
+            # Match the selected year against the parsed Date column.
+            df_filtered = df_filtered.loc[parsed_dates.dt.year == int(selected_year)].copy()
+        else:
+            st.warning("A Date column was not found, so the year filter cannot be applied.")
     if month_col and selected_month != "All":
         df_filtered = df_filtered[df_filtered[month_col].astype(str) == selected_month]
     if week_col and selected_week != "All":
