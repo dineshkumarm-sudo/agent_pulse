@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import gspread
@@ -114,7 +114,7 @@ def calculate_project_metrics(df: pd.DataFrame, now: datetime) -> dict:
     )
 
     monday = today - timedelta(days=today.weekday())
-    week_rows = result.loc[result["_date"].apply(lambda value: value is not None and monday <= value <= today)]
+    week_rows = result.loc[result["_date"].apply(lambda value: isinstance(value, date) and monday <= value <= today)]
     weekly_new = int(round(float(week_rows[new_col].sum())))
 
     return {
@@ -151,11 +151,12 @@ def post_teams_message(message: str, title: str, message_type: str) -> None:
 
 def main() -> None:
     now = datetime.now(IST)
+    mode = os.getenv("MONITOR_MODE", "daily").strip().lower()
+    if mode not in {"daily", "weekly"}:
+        raise ValueError("MONITOR_MODE must be either 'daily' or 'weekly'.")
+
     client = load_google_client()
-    daily_lines = [
-        f"Agent Pulse — Daily Productivity ({now:%d %b %Y})",
-        "",
-    ]
+    daily_lines = [f"Agent Pulse — Daily Productivity ({now:%d %b %Y})", ""]
     weekly_below_target: list[tuple[str, int, object, object]] = []
     project_errors: list[str] = []
 
@@ -163,34 +164,36 @@ def main() -> None:
         try:
             df = fetch_project_data(client, spreadsheet_url)
             metrics = calculate_project_metrics(df, now)
-            if metrics["today_productivity"] is None:
-                daily_lines.append(
-                    f"• {project_name} — Today's productivity: N/A "
-                    f"(no entries with valid hours for today; {metrics['today_rows']} row(s) found)."
-                )
-            else:
-                daily_lines.append(
-                    f"• {project_name} — Today's productivity: {metrics['today_productivity']:.2f}% "
-                    f"| New Listings: {metrics['today_new_listings']} "
-                    f"| Listing Updates: {metrics['today_listing_updates']} "
-                    f"| Hours: {metrics['today_hours']:g}"
-                )
-
-            if now.weekday() == 5 and metrics["weekly_new_listings"] < 50:
+            if mode == "daily":
+                if metrics["today_productivity"] is None:
+                    daily_lines.append(
+                        f"• {project_name} — Today's productivity: N/A "
+                        f"(no entries with valid hours for today; {metrics['today_rows']} row(s) found)."
+                    )
+                else:
+                    daily_lines.append(
+                        f"• {project_name} — Today's productivity: {metrics['today_productivity']:.2f}% "
+                        f"| New Listings: {metrics['today_new_listings']} "
+                        f"| Listing Updates: {metrics['today_listing_updates']} "
+                        f"| Hours: {metrics['today_hours']:g}"
+                    )
+            if mode == "weekly" and metrics["weekly_new_listings"] < 50:
                 weekly_below_target.append((
                     project_name, metrics["weekly_new_listings"],
                     metrics["week_start"], metrics["week_end"]
                 ))
         except Exception as exc:
             project_errors.append(f"• {project_name}: {type(exc).__name__}: {exc}")
-            daily_lines.append(f"• {project_name} — Update unavailable due to a data/configuration error.")
+            if mode == "daily":
+                daily_lines.append(f"• {project_name} — Update unavailable due to a data/configuration error.")
 
-    if project_errors:
-        daily_lines.extend(["", "Monitoring errors:", *project_errors])
+    if mode == "daily":
+        if project_errors:
+            daily_lines.extend(["", "Monitoring errors:", *project_errors])
+        post_teams_message("\n".join(daily_lines), "Agent Pulse Daily Productivity", "daily_productivity")
+        return
 
-    post_teams_message("\n".join(daily_lines), "Agent Pulse Daily Productivity", "daily_productivity")
-
-    if now.weekday() == 5 and weekly_below_target:
+    if weekly_below_target:
         weekly_lines = [
             f"Agent Pulse — Weekly New Listings Alert ({now:%d %b %Y})",
             "Weekly minimum target: 50 New Listings per project",
@@ -198,10 +201,14 @@ def main() -> None:
             "",
         ]
         for project_name, count, _start, _end in weekly_below_target:
-            weekly_lines.append(
-                f"• {project_name}: {count} New Listings — below target by {50 - count}."
-            )
+            weekly_lines.append(f"• {project_name}: {count} New Listings — below target by {50 - count}.")
         post_teams_message("\n".join(weekly_lines), "Agent Pulse Weekly Target Alert", "weekly_target_alert")
+    elif project_errors:
+        post_teams_message(
+            "Agent Pulse could not complete the weekly target check:\n" + "\n".join(project_errors),
+            "Agent Pulse Weekly Check Error",
+            "weekly_check_error",
+        )
 
 
 if __name__ == "__main__":
