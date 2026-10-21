@@ -4,6 +4,10 @@ import streamlit as st
 def collate_coo_report(tl_updates_raw: str, project_metrics_summary: str) -> str:
     """Uses NVIDIA API to collate raw TL updates into a structured email for the COO."""
     
+    # Safely convert inputs to strings in case integers/floats are passed in
+    tl_updates_str = str(tl_updates_raw) if tl_updates_raw is not None else ""
+    metrics_summary_str = str(project_metrics_summary) if project_metrics_summary is not None else ""
+
     # Initialize OpenAI client with NVIDIA's Base URL and API key
     client = OpenAI(
         base_url="https://integrate.api.nvidia.com/v1",
@@ -14,10 +18,10 @@ def collate_coo_report(tl_updates_raw: str, project_metrics_summary: str) -> str
     You are Nexus AI, an Executive Assistant. Draft a professional, executive-ready weekly summary email for the COO based on team lead inputs and project metrics.
 
     === PROJECT METRICS SUMMARY ===
-    {project_metrics_summary}
+    {metrics_summary_str}
 
     === RAW TEAM LEAD UPDATES ===
-    {tl_updates_raw}
+    {tl_updates_str}
 
     === INSTRUCTIONS ===
     - Keep tone professional, concise, and structured.
