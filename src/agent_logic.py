@@ -3,15 +3,13 @@ import streamlit as st
 import pandas as pd
 
 def ask_nvidia_agent(user_query: str, df_data: pd.DataFrame) -> str:
-    """Uses NVIDIA Llama model to answer questions based on sheet productivity data."""
+    """Uses active NVIDIA Llama model to answer questions based on sheet productivity data."""
     if df_data.empty:
         return "No data is currently loaded to perform analysis."
 
-    # Convert DataFrame summary into clean context string for the LLM
     records_summary = df_data[["Date", "Week", "Month", "Year", "Productivity (%)"]].to_string(index=False) if "Productivity (%)" in df_data.columns else df_data.to_string(index=False)
 
     try:
-        # Initialize OpenAI client pointing to NVIDIA API endpoint
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=st.secrets["nvidia"]["api_key"]
@@ -33,9 +31,9 @@ def ask_nvidia_agent(user_query: str, df_data: pd.DataFrame) -> str:
         - Keep output clean, brief, and bulleted.
         """
 
-        # Using updated NVIDIA-hosted Llama 3 model string
+        # UPDATED: Replaced deprecated llama-3.1 model string with active llama-3.3 model
         response = client.chat.completions.create(
-            model="meta/llama-3.1-70b-instruct",
+            model="meta/llama-3.3-70b-instruct",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
@@ -72,8 +70,9 @@ def collate_coo_report(tl_updates_raw: str, project_metrics_summary: str) -> str
         - Format cleanly in Markdown with bullet points.
         """
 
+        # UPDATED: Replaced deprecated llama-3.1 model string with active llama-3.3 model
         response = client.chat.completions.create(
-            model="meta/llama-3.1-70b-instruct",
+            model="meta/llama-3.3-70b-instruct",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
