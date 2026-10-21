@@ -29,7 +29,19 @@ def get_gemini_client():
             "under [gemini] with the name api_key."
         )
 
-    return genai.Client(api_key=str(api_key).strip())
+    return genai.Client(
+    api_key=str(api_key).strip(),
+    http_options=types.HttpOptions(
+        retry_options=types.HttpRetryOptions(
+            attempts=5,
+            initial_delay=1.0,
+            max_delay=10.0,
+            exp_base=2.0,
+            jitter=1.0,
+        ),
+        timeout=60000,
+    ),
+)
 
 
 # --------------------------------------------------
