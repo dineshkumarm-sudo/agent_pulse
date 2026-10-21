@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 import re
+import traceback
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import collate_coo_report
 
 st.set_page_config(page_title="Nexus AI", layout="wide")
 
-# Map Project Names to FULL Google Sheet URLs
 PROJECT_SHEETS = {
     "Superbreakers": "https://docs.google.com/spreadsheets/d/15hpOWzz9oK6idTrKq0HEaVlwAf-C-5yy_f2fC5Mh/edit"
 }
@@ -21,10 +21,9 @@ selected_project = st.selectbox(
 )
 sheet_url = PROJECT_SHEETS[selected_project]
 
-# Helper function to open sheet safely via Key/ID or URL
+# Helper function to open sheet safely via Key/ID
 def fetch_sheet_safely(url: str, sheet_name: str = "Daily_Tracker") -> pd.DataFrame:
     client = get_gsheet_client()
-    # Extract spreadsheet key/ID directly from URL string
     match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
     if match:
         spreadsheet_id = match.group(1)
@@ -32,24 +31,34 @@ def fetch_sheet_safely(url: str, sheet_name: str = "Daily_Tracker") -> pd.DataFr
     else:
         sheet = client.open_by_url(url)
     
-    worksheet = sheet.worksheet(sheet_name)
+    # Try fetching worksheet
+    try:
+        worksheet = sheet.worksheet(sheet_name)
+    except Exception:
+        # Fallback to the first available tab if "Daily_Tracker" doesn't match
+        worksheet = sheet.get_worksheet(0)
+        st.info(f"ℹ️ Could not find tab '{sheet_name}'. Loaded first tab: **'{worksheet.title}'** instead.")
+
     records = worksheet.get_all_records()
     return pd.DataFrame(records)
 
-# --- 2. SAFELY LOAD INITIAL DATA FOR FILTERS ---
+# --- 2. LOAD DATA & DISPLAY EXACT ERROR IF IT FAILS ---
 df_raw = pd.DataFrame()
 try:
     df_raw = fetch_sheet_safely(sheet_url)
+    st.success(f"Successfully connected to **{selected_project}**!")
 except Exception as e:
-    st.warning(f"⚠️ Could not load sheet data for **{selected_project}**. Verify that `agent-pulse@agent-pulse-512311.iam.gserviceaccount.com` is added as an **Editor/Viewer** on the Google Sheet.")
+    st.error(f"❌ **Google API Error Details:** {type(e).__name__} - {str(e)}")
+    with st.expander("Click to view full error stacktrace"):
+        st.code(traceback.format_exc())
 
-# --- 3. MONTH, YEAR, AND WEEK FILTERS ---
+# --- 3. FILTERS ---
 st.subheader("Filter Data")
 filter_col1, filter_col2, filter_col3 = st.columns(3)
 
-years = ["All"] + sorted([str(y) for y in df_raw["Year"].dropna().unique()]) if "Year" in df_raw.columns else ["All"]
-months = ["All"] + sorted([str(m) for m in df_raw["Month"].dropna().unique()]) if "Month" in df_raw.columns else ["All"]
-weeks = ["All"] + sorted([str(w) for w in df_raw["Week"].dropna().unique()]) if "Week" in df_raw.columns else ["All"]
+years = ["All"] + sorted([str(y) for y in df_raw["Year"].dropna().unique()]) if "Year" in df_raw.columns and not df_raw.empty else ["All"]
+months = ["All"] + sorted([str(m) for m in df_raw["Month"].dropna().unique()]) if "Month" in df_raw.columns and not df_raw.empty else ["All"]
+weeks = ["All"] + sorted([str(w) for w in df_raw["Week"].dropna().unique()]) if "Week" in df_raw.columns and not df_raw.empty else ["All"]
 
 with filter_col1:
     selected_year = st.selectbox("Year", years)
@@ -68,7 +77,7 @@ if not df_filtered.empty:
     if "Week" in df_filtered.columns and selected_week != "All":
         df_filtered = df_filtered[df_filtered["Week"].astype(str) == selected_week]
 
-# --- 4. EXECUTION BUTTON & ANALYSIS ---
+# --- 4. EXECUTION BUTTON ---
 if st.button("⚡ Execute Tracker Analysis", type="primary"):
     if df_filtered.empty:
         st.error("Cannot run analysis: No data fetched from Google Sheets.")
@@ -77,7 +86,7 @@ if st.button("⚡ Execute Tracker Analysis", type="primary"):
         st.session_state["analysis_results"] = analysis_results
         st.success(f"Analysis completed for **{selected_project}**!")
 
-# --- 5. RIGHT SIDE AUDIT PANEL ---
+# --- 5. AUDIT PANEL ---
 if "analysis_results" in st.session_state:
     results = st.session_state["analysis_results"]
     daily_alerts = results.get("daily_alerts", pd.DataFrame())
