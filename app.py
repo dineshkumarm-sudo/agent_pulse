@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import datetime
 import traceback
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import collate_coo_report
@@ -21,7 +22,6 @@ selected_project = st.selectbox(
 )
 sheet_url = PROJECT_SHEETS[selected_project]
 
-# Helper function to open sheet safely via Key/ID
 def fetch_sheet_safely(url: str, sheet_name: str = "Daily_Tracker") -> pd.DataFrame:
     client = get_gsheet_client()
     match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
@@ -31,32 +31,37 @@ def fetch_sheet_safely(url: str, sheet_name: str = "Daily_Tracker") -> pd.DataFr
     else:
         sheet = client.open_by_url(url)
     
-    # Try fetching worksheet
     try:
         worksheet = sheet.worksheet(sheet_name)
     except Exception:
-        # Fallback to the first available tab if "Daily_Tracker" doesn't match
         worksheet = sheet.get_worksheet(0)
-        st.info(f"ℹ️ Could not find tab '{sheet_name}'. Loaded first tab: **'{worksheet.title}'** instead.")
 
     records = worksheet.get_all_records()
     return pd.DataFrame(records)
 
-# --- 2. LOAD DATA & DISPLAY EXACT ERROR IF IT FAILS ---
+# --- 2. LOAD DATA ---
 df_raw = pd.DataFrame()
 try:
     df_raw = fetch_sheet_safely(sheet_url)
     st.success(f"Successfully connected to **{selected_project}**!")
 except Exception as e:
     st.error(f"❌ **Google API Error Details:** {type(e).__name__} - {str(e)}")
-    with st.expander("Click to view full error stacktrace"):
-        st.code(traceback.format_exc())
 
-# --- 3. FILTERS ---
+# --- 3. YEAR, MONTH, AND WEEK FILTERS ---
 st.subheader("Filter Data")
 filter_col1, filter_col2, filter_col3 = st.columns(3)
 
-years = ["All"] + sorted([str(y) for y in df_raw["Year"].dropna().unique()]) if "Year" in df_raw.columns and not df_raw.empty else ["All"]
+# Issue 2 Fix: Generate explicit Year options from 2025 to Current Year (2026+) merged with Sheet data
+current_year = datetime.datetime.now().year
+default_years = [str(y) for y in range(2025, current_year + 1)]
+
+if "Year" in df_raw.columns and not df_raw.empty:
+    sheet_years = [str(y) for y in df_raw["Year"].dropna().unique() if str(y).strip() != ""]
+    combined_years = sorted(list(set(default_years + sheet_years)))
+else:
+    combined_years = default_years
+
+years = ["All"] + combined_years
 months = ["All"] + sorted([str(m) for m in df_raw["Month"].dropna().unique()]) if "Month" in df_raw.columns and not df_raw.empty else ["All"]
 weeks = ["All"] + sorted([str(w) for w in df_raw["Week"].dropna().unique()]) if "Week" in df_raw.columns and not df_raw.empty else ["All"]
 
@@ -80,30 +85,40 @@ if not df_filtered.empty:
 # --- 4. EXECUTION BUTTON ---
 if st.button("⚡ Execute Tracker Analysis", type="primary"):
     if df_filtered.empty:
-        st.error("Cannot run analysis: No data fetched from Google Sheets.")
+        st.error("Cannot run analysis: No matching data found for the selected filters.")
     else:
         analysis_results = analyze_project_productivity(df_filtered)
         st.session_state["analysis_results"] = analysis_results
         st.success(f"Analysis completed for **{selected_project}**!")
 
-# --- 5. AUDIT PANEL ---
+# --- 5. AUDIT PANEL (ALWAYS RENDERED WITH UNSAFE_ALLOW_HTML) ---
+# Issue 1 Fix: Always construct and render the sidebar container directly via st.sidebar.html or st.sidebar.markdown
+st.sidebar.subheader("Google Sheets Audit")
+
 if "analysis_results" in st.session_state:
     results = st.session_state["analysis_results"]
     daily_alerts = results.get("daily_alerts", pd.DataFrame())
 
-    audit_html = "<div class='audit-container'>"
     if not daily_alerts.empty:
         for idx, row in daily_alerts.iterrows():
-            audit_html += f"""
-            <div style="margin-bottom: 12px; padding: 10px; border-left: 4px solid #ff4b4b; background-color: #1a1c23; border-radius: 4px;">
-                <div style="font-weight: bold; color: #ff4b4b;">Low Productivity Flag</div>
-                <div style="font-size: 0.9em; margin-top: 4px;">User/Date: {row.get('Name', 'N/A')} - {row.get('Date', 'N/A')}</div>
-                <div style="font-size: 0.85em; color: #a0a0a0;">Score: {row.get('Productivity (%)', 'N/A')}%</div>
-            </div>
-            """
+            name_val = row.get("Name") if pd.notnull(row.get("Name")) and str(row.get("Name")).strip() != "" else "Team Member"
+            date_val = row.get("Date", "N/A")
+            score_val = row.get("Productivity (%)", "N/A")
+            
+            st.sidebar.markdown(
+                f"""
+                <div style="margin-bottom: 12px; padding: 10px; border-left: 4px solid #ff4b4b; background-color: #1a1c23; border-radius: 4px;">
+                    <div style="font-weight: bold; color: #ff4b4b;">Low Productivity Flag</div>
+                    <div style="font-size: 0.9em; margin-top: 4px; color: #ffffff;">User/Date: {name_val} - {date_val}</div>
+                    <div style="font-size: 0.85em; color: #a0a0a0;">Score: {score_val}%</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
     else:
-        audit_html += "<div style='color: #4CAF50;'>All team logs met productivity thresholds.</div>"
-    audit_html += "</div>"
-
-    st.sidebar.subheader("Google Sheets Audit")
-    st.sidebar.markdown(audit_html, unsafe_allow_html=True)
+        st.sidebar.markdown(
+            "<div style='color: #4CAF50; padding: 10px; background-color: #1a1c23; border-radius: 4px;'>All team logs met productivity thresholds.</div>",
+            unsafe_allow_html=True
+        )
+else:
+    st.sidebar.info("Execute analysis to view audit flags.")
