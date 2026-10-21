@@ -1,47 +1,45 @@
-
 import json
 import os
 
 import pandas as pd
 import streamlit as st
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 
 # --------------------------------------------------
-# AGENT PULSE - GEMINI CONFIGURATION
+# AGENT PULSE - AIONLABS CONFIGURATION
 # --------------------------------------------------
 
-GEMINI_MODEL = "gemini-3.8-flash"
+AIONLABS_BASE_URL = "https://api.aionlabs.ai/v1"
+DEFAULT_AIONLABS_MODEL = "aion-labs/aion-3.5-mini"
 
 
-def get_gemini_client():
-    """Connect to Gemini using the key stored in Streamlit Secrets."""
+def get_ai_client():
+    """Connect to AionLabs using a key stored in Streamlit Secrets."""
+
+    api_key = None
+    model = DEFAULT_AIONLABS_MODEL
 
     try:
-        api_key = st.secrets["gemini"]["api_key"]
+        api_key = st.secrets["aionlabs"]["api_key"]
+        model = st.secrets["aionlabs"].get("model", DEFAULT_AIONLABS_MODEL)
     except Exception:
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("AIONLABS_API_KEY")
+        model = os.getenv("AIONLABS_MODEL", DEFAULT_AIONLABS_MODEL)
 
     if not api_key or not str(api_key).strip():
         raise ValueError(
-            "Gemini API key is missing. Add it to Streamlit Secrets "
-            "under [gemini] with the name api_key."
+            "AionLabs API key is missing. In Streamlit Cloud, add "
+            "[aionlabs] with api_key under Settings → Secrets."
         )
 
-    return genai.Client(
-    api_key=str(api_key).strip(),
-    http_options=types.HttpOptions(
-        retry_options=types.HttpRetryOptions(
-            attempts=5,
-            initial_delay=1.0,
-            max_delay=10.0,
-            exp_base=2.0,
-            jitter=1.0,
-        ),
-        timeout=60000,
-    ),
-)
+    client = OpenAI(
+        api_key=str(api_key).strip(),
+        base_url=AIONLABS_BASE_URL,
+        timeout=90.0,
+        max_retries=2,
+    )
+    return client, str(model).strip()
 
 
 # --------------------------------------------------
@@ -87,6 +85,30 @@ def prepare_data_for_ai(df_data):
 
 
 # --------------------------------------------------
+# SHARED AIONLABS CHAT COMPLETION
+# --------------------------------------------------
+
+def _generate_text(client, model, system_instruction, prompt):
+    """Send a chat-completion request to AionLabs and return its text."""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=4096,
+    )
+
+    if not response.choices:
+        return ""
+
+    content = response.choices[0].message.content
+    return content.strip() if isinstance(content, str) else ""
+
+
+# --------------------------------------------------
 # MAIN AI ASSISTANT
 # --------------------------------------------------
 
@@ -96,7 +118,7 @@ def ask_agent_pulse(
     project_name="Selected Project",
 ):
     """
-    Answer questions using the spreadsheet records supplied by app.py.
+    Answer questions using spreadsheet records supplied by app.py.
     The AI must not invent missing productivity figures.
     """
 
@@ -112,7 +134,7 @@ def ask_agent_pulse(
         )
 
     try:
-        client = get_gemini_client()
+        client, model = get_ai_client()
         spreadsheet_data = prepare_data_for_ai(df_data)
 
         system_instruction = """
@@ -152,52 +174,45 @@ Answer the user's question using the supplied records only.
 If the records do not contain the requested information, say so.
 """
 
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.2,
-                max_output_tokens=4096,
-            ),
-        )
+        answer = _generate_text(client, model, system_instruction, prompt)
 
-        answer = getattr(response, "text", None)
-
-        if answer and answer.strip():
-            return answer.strip()
+        if answer:
+            return answer
 
         return (
-            "Gemini returned an empty response. Please try again "
+            "AionLabs returned an empty response. Please try again "
             "with a more specific question."
         )
 
     except Exception as exc:
         error_message = str(exc)
+        lower_error = error_message.lower()
 
-        if "API_KEY_INVALID" in error_message or "API key not valid" in error_message:
+        if "401" in error_message or "invalid api key" in lower_error or "authentication" in lower_error:
             return (
-                "The Gemini API key appears to be invalid. "
-                "Check the key in Streamlit Settings → Secrets."
+                "The AionLabs API key was rejected. Check the key in "
+                "Streamlit Cloud → Settings → Secrets under [aionlabs]."
             )
 
-        if "404" in error_message or "NOT_FOUND" in error_message:
+        if "404" in error_message or "unknown model" in lower_error or "model_not_found" in lower_error:
             return (
-                f"Gemini could not find the configured model "
-                f"'{GEMINI_MODEL}'. Check the model ID and API access."
+                f"AionLabs could not find the configured model '{model if 'model' in locals() else DEFAULT_AIONLABS_MODEL}'. "
+                "Check the model ID in Streamlit Secrets."
+            )
+
+        if "429" in error_message or "rate limit" in lower_error:
+            return (
+                "AionLabs reported a rate or usage limit. Check your "
+                "AionLabs account limits and try again later."
             )
 
         return (
-            "Agent Pulse could not connect to Gemini.\n\n"
+            "Agent Pulse could not connect to AionLabs.\n\n"
             f"Error details: {error_message}"
         )
 
 
-# --------------------------------------------------
-# BACKWARD COMPATIBILITY
-# --------------------------------------------------
-
-# Keep this alias because app.py may still import the old function name.
+# Keep this alias in case another module still imports the old function name.
 ask_nvidia_agent = ask_agent_pulse
 
 
@@ -212,7 +227,14 @@ def collate_coo_report(tl_updates_raw, project_metrics_summary):
     """
 
     try:
-        client = get_gemini_client()
+        client, model = get_ai_client()
+
+        system_instruction = """
+You are an assistant helping an eCommerce project manager prepare
+accurate, concise reports for a COO. Do not invent figures, commitments,
+deadlines, blockers, or other details. Clearly distinguish facts from
+observations. If information is missing, do not guess.
+"""
 
         prompt = f"""
 Prepare a concise, professional COO report using the information below.
@@ -233,21 +255,12 @@ Requirements:
 - Use clear headings and bullet points.
 """
 
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=4096,
-            ),
-        )
+        answer = _generate_text(client, model, system_instruction, prompt)
 
-        answer = getattr(response, "text", None)
+        if answer:
+            return answer
 
-        if answer and answer.strip():
-            return answer.strip()
-
-        return "Gemini returned an empty response while preparing the COO report."
+        return "AionLabs returned an empty response while preparing the COO report."
 
     except Exception as exc:
-        return f"Unable to generate the COO report: {exc}"
+        return f"Unable to generate the COO report using AionLabs: {exc}"
