@@ -10,7 +10,13 @@ SCOPES = [
 
 def get_gsheet_client():
     """Initializes gspread client using Streamlit secrets."""
-    creds_dict = st.secrets["gservices"]
+    # Convert Streamlit secrets object to a standard dict
+    creds_dict = dict(st.secrets["gservices"])
+    
+    # Ensure escaped newline characters in private_key are converted properly
+    if "private_key" in creds_dict and isinstance(creds_dict["private_key"], str):
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
     credentials = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(credentials)
 
@@ -53,6 +59,13 @@ def analyze_project_productivity(df: pd.DataFrame, low_prod_threshold: float = 1
     Applies productivity logic across daily logs and detects weekly threshold alerts.
     """
     df_clean = df.copy()
+    
+    # Ensure numeric fields are converted safely to float to prevent TypeError
+    numeric_cols = ["SB Hrs Worked", "New Listings", "Listing Update"]
+    for col in numeric_cols:
+        if col in df_clean.columns:
+            df_clean[col] = pd.to_numeric(df_clean[col], errors="coerce").fillna(0)
+
     df_clean["Productivity (%)"] = df_clean.apply(calculate_row_productivity, axis=1)
 
     # Flag low daily productivity (< 100%)
@@ -64,8 +77,13 @@ def analyze_project_productivity(df: pd.DataFrame, low_prod_threshold: float = 1
     df_clean["Low_Productivity_Flag"] = df_clean["Productivity (%)"].apply(is_low)
 
     # Group by Week to check total new listings (< 50 alert)
-    weekly_summary = df_clean.groupby("Week")["New Listings"].sum().reset_index()
-    weekly_alerts = weekly_summary[weekly_summary["New Listings"] < 50]
+    if "Week" in df_clean.columns:
+        # Cast 'Week' to string explicitly so integer week numbers don't break string formatting/concatenation
+        df_clean["Week"] = df_clean["Week"].astype(str)
+        weekly_summary = df_clean.groupby("Week")["New Listings"].sum().reset_index()
+        weekly_alerts = weekly_summary[weekly_summary["New Listings"] < 50]
+    else:
+        weekly_alerts = pd.DataFrame(columns=["Week", "New Listings"])
 
     return {
         "processed_df": df_clean,
