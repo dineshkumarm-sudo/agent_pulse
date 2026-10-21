@@ -138,12 +138,7 @@ def post_teams_message(message: str, title: str, message_type: str) -> None:
         )
     response = requests.post(
         webhook_url,
-        json={
-            "title": title,
-            "text": message,
-            "message_type": message_type,
-            "sent_at_ist": datetime.now(IST).isoformat(timespec="seconds"),
-        },
+        json={"text": title + "\\n\\n" + message},
         timeout=30,
     )
     response.raise_for_status()
