@@ -1,27 +1,57 @@
-from openai import OpenAI
 import streamlit as st
 import pandas as pd
+import requests
 
-# Standard, active NVIDIA catalog endpoints (no UUID lookups)
+NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+# Active model IDs on NVIDIA build catalog
 NVIDIA_MODELS = [
-    "nvidia/llama-3.1-nemotron-70b-instruct",
     "meta/llama-3.3-70b-instruct",
     "deepseek-ai/deepseek-r1",
     "mistralai/mistral-large-2-instruct",
-    "meta/llama3-70b-instruct"
+    "nvidia/llama-3.1-nemotron-70b-instruct"
 ]
 
+def call_nvidia_api(messages: list) -> str:
+    """Sends a raw POST request directly to NVIDIA's API endpoint."""
+    api_key = st.secrets["nvidia"]["api_key"].strip()
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    last_error = None
+    for model_name in NVIDIA_MODELS:
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 1024
+        }
+        
+        try:
+            response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return f"*(Active Model: `{model_name}`)*\n\n" + content
+            else:
+                last_error = f"Status {response.status_code} ({model_name}): {response.text}"
+        except Exception as e:
+            last_error = str(e)
+            
+    return f"❌ **NVIDIA API Error Details:** {last_error}"
+
+
 def ask_nvidia_agent(user_query: str, df_data: pd.DataFrame) -> str:
-    """Uses NVIDIA hosted models directly to answer productivity queries."""
+    """Uses NVIDIA API to answer productivity queries from Google Sheet data."""
     if df_data.empty:
         return "No data is currently loaded to perform analysis."
 
     records_summary = df_data[["Date", "Week", "Month", "Year", "Productivity (%)"]].to_string(index=False) if "Productivity (%)" in df_data.columns else df_data.to_string(index=False)
-
-    client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=st.secrets["nvidia"]["api_key"]
-    )
 
     prompt = f"""
     You are Nexus AI, an Operations & Productivity Intelligence Assistant.
@@ -39,30 +69,12 @@ def ask_nvidia_agent(user_query: str, df_data: pd.DataFrame) -> str:
     - Keep output clean, brief, and bulleted.
     """
 
-    # Iterate through standard endpoints directly
-    last_error = None
-    for model_name in NVIDIA_MODELS:
-        try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2
-            )
-            return f"*(Active Model: `{model_name}`)*\n\n" + response.choices[0].message.content
-        except Exception as e:
-            last_error = e
-            continue
-
-    return f"❌ **NVIDIA API Error:** {type(last_error).__name__} - {str(last_error)}"
+    messages = [{"role": "user", "content": prompt}]
+    return call_nvidia_api(messages)
 
 
 def collate_coo_report(tl_updates_raw: str, project_metrics_summary: str) -> str:
     """Uses NVIDIA API to collate raw TL updates into a structured email for the COO."""
-    client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=st.secrets["nvidia"]["api_key"]
-    )
-
     prompt = f"""
     You are Nexus AI, an Executive Assistant. Draft a professional, executive-ready weekly summary email for the COO based on team lead inputs and project metrics.
 
@@ -81,17 +93,5 @@ def collate_coo_report(tl_updates_raw: str, project_metrics_summary: str) -> str
     - Format cleanly in Markdown with bullet points.
     """
 
-    last_error = None
-    for model_name in NVIDIA_MODELS:
-        try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_error = e
-            continue
-
-    return f"❌ **NVIDIA API Error:** {type(last_error).__name__} - {str(last_error)}"
+    messages = [{"role": "user", "content": prompt}]
+    return call_nvidia_api(messages)
