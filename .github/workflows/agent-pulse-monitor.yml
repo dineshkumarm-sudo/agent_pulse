@@ -1,0 +1,37 @@
+name: Agent Pulse Teams Monitoring
+
+on:
+  schedule:
+    # 19:00 India Standard Time (UTC+05:30), every day.
+    - cron: "30 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-pulse-teams-monitor
+  cancel-in-progress: false
+
+jobs:
+  send-productivity-updates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install monitoring dependencies
+        run: python -m pip install --upgrade pip pandas gspread google-auth requests
+
+      - name: Run Agent Pulse monitoring
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: \${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TEAMS_WORKFLOW_WEBHOOK_URL: \${{ secrets.TEAMS_WORKFLOW_WEBHOOK_URL }}
+        run: python -m src.background_monitor
