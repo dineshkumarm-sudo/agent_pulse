@@ -1,4 +1,4 @@
-"""Scheduled Agent Pulse monitoring for Microsoft Teams.
+"""Scheduled Agent Pulse email monitoring.
 
 This script deliberately uses Python for calculations; it does not call an AI API.
 Run it from GitHub Actions or locally with the required environment variables.
@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import smtplib
+from email.message import EmailMessage
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -129,19 +131,27 @@ def calculate_project_metrics(df: pd.DataFrame, now: datetime) -> dict:
     }
 
 
-def post_teams_message(message: str, title: str, message_type: str) -> None:
-    webhook_url = os.getenv("TEAMS_WORKFLOW_WEBHOOK_URL", "").strip()
-    if not webhook_url:
+def send_email(message: str, subject: str) -> None:
+    sender = os.getenv("GMAIL_ADDRESS", "").strip()
+    app_password = os.getenv("GMAIL_APP_PASSWORD", "").strip()
+    if not sender or not app_password:
         raise RuntimeError(
-            "Missing GitHub Actions secret TEAMS_WORKFLOW_WEBHOOK_URL. "
-            "Create a Teams Workflow webhook and save its URL as this secret."
+            "Missing GitHub Actions secrets GMAIL_ADDRESS and/or GMAIL_APP_PASSWORD. "
+            "Add your Gmail address and Gmail App Password under repository Actions secrets."
         )
-    response = requests.post(
-        webhook_url,
-        json={"text": title + "\n\n" + message},
-        timeout=30,
-    )
-    response.raise_for_status()
+
+    email = EmailMessage()
+    email["Subject"] = subject
+    email["From"] = sender
+    email["To"] = sender
+    email.set_content(message)
+
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(sender, app_password)
+        server.send_message(email)
 
 
 def main() -> None:
@@ -185,7 +195,7 @@ def main() -> None:
     if mode == "daily":
         if project_errors:
             daily_lines.extend(["", "Monitoring errors:", *project_errors])
-        post_teams_message("\n".join(daily_lines), "Agent Pulse Daily Productivity", "daily_productivity")
+        send_email("\n".join(daily_lines), "Agent Pulse Daily Productivity")
         return
 
     if weekly_below_target:
@@ -197,12 +207,11 @@ def main() -> None:
         ]
         for project_name, count, _start, _end in weekly_below_target:
             weekly_lines.append(f"• {project_name}: {count} New Listings — below target by {50 - count}.")
-        post_teams_message("\n".join(weekly_lines), "Agent Pulse Weekly Target Alert", "weekly_target_alert")
+        send_email("\n".join(weekly_lines), "Agent Pulse Weekly Target Alert")
     elif project_errors:
-        post_teams_message(
+        send_email(
             "Agent Pulse could not complete the weekly target check:\n" + "\n".join(project_errors),
             "Agent Pulse Weekly Check Error",
-            "weekly_check_error",
         )
 
 
