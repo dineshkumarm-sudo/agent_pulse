@@ -64,9 +64,9 @@ def find_hours_column(df):
 
 def calculate_productivity(df):
     """
-    Normalized productivity:
-    ((New Listings / 20) + (Listing Update / 25)) / 2 * (4 / Hours) * 100.
-    Meeting both targets proportionally over 4 hours equals 100%.
+    Productivity is the sum of each activity's target achievement, adjusted
+    for actual hours worked. Targets double for every additional 4 hours.
+    Formula: ((New Listings / 20) + (Listing Update / 25)) / (Hours / 4) * 100.
     """
     result = df.copy()
 
@@ -101,8 +101,8 @@ def calculate_productivity(df):
     valid_counts = new_count.notna() & existing_count.notna()
     valid_hours = hours.notna() & hours.gt(0)
 
-    average_target_achievement = ((new_count / 20) + (existing_count / 25)) / 2
-    productivity = average_target_achievement * (4 / hours.where(valid_hours)) * 100
+    total_target_achievement = (new_count / 20) + (existing_count / 25)
+    productivity = total_target_achievement * (4 / hours.where(valid_hours)) * 100
     productivity = productivity.where(valid_counts & valid_hours)
 
     result["Productivity (%)"] = productivity.round(2)
@@ -392,8 +392,8 @@ if not df_filtered.empty:
     df_filtered, calculation_ok, calculation_note = calculate_productivity(df_filtered)
     if calculation_ok:
         st.caption(
-            "Productivity uses normalized target achievement: 20 New Listings and "
-            "25 Listing Updates per 4 hours. Meeting both targets proportionally equals 100%."
+            "Productivity adds target achievement for each activity: 20 New Listings "
+            "and 25 Listing Updates per 4 hours. Targets scale proportionally with hours worked."
         )
     else:
         st.warning(calculation_note)
