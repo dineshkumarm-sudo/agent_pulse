@@ -8,7 +8,7 @@ from src.agent_logic import collate_coo_report
 st.set_page_config(page_title="Nexus AI", layout="wide")
 
 PROJECT_SHEETS = {
-    "Superbreakers": "https://docs.google.com/spreadsheets/d/15hpOWzz9oK6idTrKq0HEaVlwAf-C-5yy_f2fC5Mh/edit"
+    "Superbreakers": "https://docs.google.com/spreadsheets/d/15hpOWzz9oK6idTrKq0HEaVIwAf-C-5yy_f2fC5Mhtfc/edit?gid=547444785#gid=547444785"
 }
 
 st.title("Tracker Operations")
