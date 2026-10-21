@@ -10,13 +10,7 @@ from src.agent_logic import ask_agent_pulse, collate_coo_report
 
 st.set_page_config(page_title="Agent Pulse", page_icon="⚡", layout="wide")
 
-PROJECT_SHEETS = {
-    "Superbreakers": (
-        "https://docs.google.com/spreadsheets/d/"
-        "15hpOWzz9oK6idTrKq0HEaVIwAf-C-5yy_f2fC5Mhtfc/"
-        "edit?gid=547444785#gid=547444785"
-    )
-}
+from src.project_config import PROJECT_SHEETS
 
 
 # ============================================================
@@ -266,6 +260,50 @@ except Exception as exc:
 
 
 # ============================================================
+# DASHBOARD FILTERS
+# ============================================================
+
+st.subheader("Dashboard Filters")
+if sheet_error:
+    st.error(f"Google Sheets error: {sheet_error}")
+
+if not df_raw.empty:
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
+    month_col = find_column(df_raw, ["Month"])
+    week_col = find_column(df_raw, ["Week"])
+
+    # The Date column is the source of truth for year filtering. Do not rely on
+    # a separate Year field, which may be missing, stale, or incorrectly filled.
+    parsed_dates = parse_date_series(df_raw[date_col]) if date_col else pd.Series(pd.NaT, index=df_raw.index)
+    date_years = sorted(parsed_dates.dropna().dt.year.unique().tolist())
+    years = ["All"] + [str(year) for year in date_years]
+    months = ["All"] + sorted(df_raw[month_col].dropna().astype(str).unique()) if month_col else ["All"]
+    weeks = ["All"] + sorted(df_raw[week_col].dropna().astype(str).unique()) if week_col else ["All"]
+
+    with filter_col1:
+        selected_year = st.selectbox("Year", years)
+    with filter_col2:
+        selected_month = st.selectbox("Month", months)
+    with filter_col3:
+        selected_week = st.selectbox("Week", weeks)
+
+    df_filtered = df_raw.copy()
+    if selected_year != "All":
+        if date_col:
+            # Match the selected year against the parsed Date column.
+            df_filtered = df_filtered.loc[parsed_dates.dt.year == int(selected_year)].copy()
+        else:
+            st.warning("A Date column was not found, so the year filter cannot be applied.")
+    if month_col and selected_month != "All":
+        df_filtered = df_filtered[df_filtered[month_col].astype(str) == selected_month]
+    if week_col and selected_week != "All":
+        df_filtered = df_filtered[df_filtered[week_col].astype(str) == selected_week]
+else:
+    df_filtered = pd.DataFrame()
+
+
+# ============================================================
 # AGENT PULSE AI CHAT
 # ============================================================
 
@@ -285,7 +323,7 @@ if submitted:
         st.warning("Please enter a question.")
     elif sheet_error:
         st.error(f"Google Sheets error: {sheet_error}")
-    elif df_raw.empty:
+    elif df_filtered.empty:
         st.warning("No Google Sheets records are available.")
     else:
         st.session_state.agent_pulse_messages.append({"role": "user", "content": user_query})
@@ -296,7 +334,7 @@ if submitted:
             or re.search(r"\b(data|records|rows|table|details)\b", query_lower)
         )
 
-        relevant_df = df_raw.copy()
+        relevant_df = df_filtered.copy()
         filter_note = ""
         if asks_last_week:
             date_col = find_column(relevant_df, ["Date", "Work Date", "Log Date"])
@@ -344,49 +382,6 @@ for message_index, message in enumerate(st.session_state.agent_pulse_messages):
 
 st.markdown("---")
 
-
-# ============================================================
-# DASHBOARD FILTERS
-# ============================================================
-
-st.subheader("Dashboard Filters")
-if sheet_error:
-    st.error(f"Google Sheets error: {sheet_error}")
-
-if not df_raw.empty:
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
-    month_col = find_column(df_raw, ["Month"])
-    week_col = find_column(df_raw, ["Week"])
-
-    # The Date column is the source of truth for year filtering. Do not rely on
-    # a separate Year field, which may be missing, stale, or incorrectly filled.
-    parsed_dates = parse_date_series(df_raw[date_col]) if date_col else pd.Series(pd.NaT, index=df_raw.index)
-    date_years = sorted(parsed_dates.dropna().dt.year.unique().tolist())
-    years = ["All"] + [str(year) for year in date_years]
-    months = ["All"] + sorted(df_raw[month_col].dropna().astype(str).unique()) if month_col else ["All"]
-    weeks = ["All"] + sorted(df_raw[week_col].dropna().astype(str).unique()) if week_col else ["All"]
-
-    with filter_col1:
-        selected_year = st.selectbox("Year", years)
-    with filter_col2:
-        selected_month = st.selectbox("Month", months)
-    with filter_col3:
-        selected_week = st.selectbox("Week", weeks)
-
-    df_filtered = df_raw.copy()
-    if selected_year != "All":
-        if date_col:
-            # Match the selected year against the parsed Date column.
-            df_filtered = df_filtered.loc[parsed_dates.dt.year == int(selected_year)].copy()
-        else:
-            st.warning("A Date column was not found, so the year filter cannot be applied.")
-    if month_col and selected_month != "All":
-        df_filtered = df_filtered[df_filtered[month_col].astype(str) == selected_month]
-    if week_col and selected_week != "All":
-        df_filtered = df_filtered[df_filtered[week_col].astype(str) == selected_week]
-else:
-    df_filtered = pd.DataFrame()
 
 
 # ============================================================
