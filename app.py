@@ -173,7 +173,7 @@ def get_last_week_data(df, date_col):
     return result, note
 
 
-def build_productivity_chart(df):
+def build_productivity_chart(df, alert_threshold=90):
     if "Productivity (%)" not in df.columns:
         st.warning("Productivity chart is unavailable until the source columns are identified.")
         return
@@ -222,7 +222,7 @@ def build_productivity_chart(df):
             "Listing Update: %{customdata[3]}<br>Hours Worked: %{customdata[4]}<extra></extra>"
         )
     )
-    fig.add_hline(y=95, line_dash="dash", annotation_text="95% threshold")
+    fig.add_hline(y=alert_threshold, line_dash="dash", annotation_text=f"{alert_threshold}% alert threshold")
     fig.update_layout(
         xaxis_title=x_title, yaxis_title="Productivity (%)",
         hovermode="closest", legend_title="Task Type",
@@ -508,7 +508,7 @@ if not df_filtered.empty:
         else:
             kpi3.metric("Total Listings Processed", "N/A")
 
-    build_productivity_chart(df_filtered)
+    build_productivity_chart(df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90))
     st.subheader("Productivity Table")
     if calculation_ok:
         st.caption(
@@ -551,6 +551,6 @@ if "analysis_results" in st.session_state:
                 f"Calculated Productivity: {score_display}"
             )
     else:
-        st.sidebar.success("No productivity alerts below 95% were reported.")
+        st.sidebar.success(f"No productivity alerts below {PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)}% were reported.")
 else:
     st.sidebar.info("Execute tracker analysis to view audit flags.")
