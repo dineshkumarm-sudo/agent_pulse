@@ -455,7 +455,9 @@ if st.button("Execute Tracker Analysis", type="primary"):
                 results = {"analysis_output": results}
             results["processed_df"] = df_filtered.copy()
             if calculation_ok:
-                results["daily_alerts"] = build_daily_alerts(\n                    df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)\n                )
+                results["daily_alerts"] = build_daily_alerts(
+                    df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)
+                )
             st.session_state["analysis_results"] = results
             st.session_state["active_df"] = df_filtered.copy()
             st.success("Tracker analysis completed.")
