@@ -116,7 +116,7 @@ def calculate_project_metrics(df: pd.DataFrame, now: datetime) -> dict:
     )
 
     monday = today - timedelta(days=today.weekday())
-    week_rows = result.loc[result["_date"].apply(lambda value: isinstance(value, date) and monday <= value <= today)]
+    week_rows = result.loc[result["_date"].apply(lambda value: pd.notna(value) and monday <= value <= today)]
     weekly_new = int(round(float(week_rows[new_col].sum())))
 
     return {
