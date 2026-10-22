@@ -6,11 +6,11 @@ import plotly.express as px
 
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import ask_agent_pulse, collate_coo_report
+from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS
 
 
 st.set_page_config(page_title="Agent Pulse", page_icon="⚡", layout="wide")
 
-from src.project_config import PROJECT_SHEETS
 
 
 # ============================================================
@@ -246,7 +246,6 @@ def build_daily_alerts(df, threshold=90):
 # SIDEBAR, PROJECT DIRECTORY AND NOTIFICATION SETTINGS
 # ============================================================
 
-from src.project_config import PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS
 
 st.sidebar.title("⚡ Agent Pulse")
 st.sidebar.caption("TRACKER OPERATIONS INTELLIGENCE")
