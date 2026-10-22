@@ -2,10 +2,10 @@ name: Agent Pulse Email Monitoring
 
 on:
   schedule:
-    # Daily report at 19:00 IST (13:30 UTC).
-    - cron: "30 13 * * *"
-    # Weekly target check Saturday at 09:00 IST (03:30 UTC).
-    - cron: "30 3 * * 6"
+    # Daily report Monday to Friday at 19:00 IST (13:30 UTC).
+    - cron: "30 13 * * 1-5"
+    # Weekly target check Saturday at 07:30 IST (02:00 UTC).
+    - cron: "0 2 * * 6"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   daily-report:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 13 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 13 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,7 +37,7 @@ jobs:
         run: python -m src.background_monitor
 
   weekly-target-check:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 3 * * 6'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * 6'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
