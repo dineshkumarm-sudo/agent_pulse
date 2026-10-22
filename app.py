@@ -122,7 +122,7 @@ def productivity_cell_style(value):
         return ""
     if pd.isna(percentage):
         return ""
-    if percentage < 95:
+    if percentage < 90:
         return "background-color: #FDE2E2; color: #B91C1C; font-weight: bold;"
     if percentage < 100:
         return "background-color: #FFEDD5; color: #9A3412; font-weight: bold;"
@@ -232,23 +232,39 @@ def build_productivity_chart(df):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def build_daily_alerts(df):
+def build_daily_alerts(df, threshold=90):
     if df.empty or "Productivity (%)" not in df.columns:
         return pd.DataFrame()
     numeric = parse_productivity(df["Productivity (%)"])
-    alerts = df.loc[numeric.notna() & (numeric < 95)].copy()
+    alerts = df.loc[numeric.notna() & (numeric < threshold)].copy()
     if not alerts.empty:
         alerts["Productivity (%)"] = numeric.loc[alerts.index].round(2)
     return alerts
 
 
 # ============================================================
-# SIDEBAR AND GOOGLE SHEETS
+# SIDEBAR, PROJECT DIRECTORY AND NOTIFICATION SETTINGS
 # ============================================================
 
+from src.project_config import PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS
+
 st.sidebar.title("⚡ Agent Pulse")
-st.sidebar.caption("Tracker Operations Intelligence")
-selected_project = st.sidebar.selectbox("Select Active Project", options=list(PROJECT_SHEETS.keys()))
+st.sidebar.caption("TRACKER OPERATIONS INTELLIGENCE")
+
+with st.sidebar.expander("🗂️  Project Directory", expanded=True):
+    st.caption("Select a connected project below. More project trackers can be connected as their sheet URLs are added.")
+    for project_name in PROJECT_NAMES:
+        if project_name in PROJECT_SHEETS:
+            if st.button(f"🟢  {project_name}", key=f"project_pick_{project_name}", use_container_width=True):
+                st.session_state["selected_project"] = project_name
+        else:
+            st.markdown(f"⚪ **{project_name}**")
+            st.caption("Tracker connection pending")
+
+if "selected_project" not in st.session_state or st.session_state["selected_project"] not in PROJECT_SHEETS:
+    st.session_state["selected_project"] = list(PROJECT_SHEETS.keys())[0]
+
+selected_project = st.session_state["selected_project"]
 sheet_url = PROJECT_SHEETS[selected_project]
 
 df_raw = pd.DataFrame()
@@ -307,9 +323,33 @@ else:
 # AGENT PULSE AI CHAT
 # ============================================================
 
-st.title("⚡ Agent Pulse")
-st.caption(f"AI Operations Assistant | Active Project: {selected_project}")
-st.markdown("Ask questions, retrieve tracker records, compare periods, or request productivity insights.")
+st.markdown("""
+<style>
+.block-container {padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1500px;}
+[data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.18);}
+.ap-hero {
+  padding: 1.7rem 1.8rem; border-radius: 22px; margin: .2rem 0 1.2rem 0;
+  color: white; background:
+  linear-gradient(110deg, rgba(13,27,52,.96) 0%, rgba(24,67,101,.92) 58%, rgba(16,125,129,.82) 100%),
+  url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1600&q=85');
+  background-size: cover; background-position: center;
+  box-shadow: 0 12px 32px rgba(15,45,70,.18);
+}
+.ap-eyebrow {font-size:.76rem; letter-spacing:.16em; text-transform:uppercase; opacity:.8; font-weight:700;}
+.ap-hero h1 {font-size:2.2rem; line-height:1.12; margin:.45rem 0 .55rem 0; color:#fff;}
+.ap-hero p {font-size:1rem; margin:0; opacity:.9; max-width:680px;}
+.ap-pill {display:inline-block; margin-top:1rem; padding:.35rem .7rem; border:1px solid rgba(255,255,255,.35); border-radius:999px; font-size:.8rem;}
+div[data-testid="stMetric"] {border:1px solid rgba(128,128,128,.18); padding:1rem 1.1rem; border-radius:16px; background:rgba(128,128,128,.035);}
+div[data-testid="stExpander"] {border-radius:14px;}
+</style>
+<div class="ap-hero">
+  <div class="ap-eyebrow">Operations intelligence · Live tracker</div>
+  <h1>Agent Pulse</h1>
+  <p>A clearer view of productivity, listing activity, and project health — all in one place.</p>
+  <span class="ap-pill">⚡ Active project: """ + selected_project + """</span>
+</div>
+""", unsafe_allow_html=True)
+st.caption("Ask questions, retrieve tracker records, compare periods, or request productivity insights.")
 
 if "agent_pulse_messages" not in st.session_state:
     st.session_state.agent_pulse_messages = []
@@ -415,13 +455,37 @@ if st.button("Execute Tracker Analysis", type="primary"):
                 results = {"analysis_output": results}
             results["processed_df"] = df_filtered.copy()
             if calculation_ok:
-                results["daily_alerts"] = build_daily_alerts(df_filtered)
+                results["daily_alerts"] = build_daily_alerts(\n                    df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)\n                )
             st.session_state["analysis_results"] = results
             st.session_state["active_df"] = df_filtered.copy()
             st.success("Tracker analysis completed.")
         except Exception as exc:
             st.error(f"Analysis failed: {type(exc).__name__}: {exc}")
 
+
+# ============================================================
+# NOTIFICATION CENTER
+# ============================================================
+
+st.markdown("### 🔔 Notification Center")
+threshold = PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project)
+if not df_filtered.empty and calculation_ok and threshold is not None:
+    current_prod = parse_productivity(df_filtered["Productivity (%)"])
+    low_prod_rows = df_filtered.loc[current_prod.notna() & (current_prod < threshold)].copy()
+    if low_prod_rows.empty:
+        st.success(f"All clear — no productivity entries below {threshold}% in the currently filtered {selected_project} data.")
+    else:
+        st.warning(f"{len(low_prod_rows)} productivity alert(s): entries below {threshold}% for {selected_project}.")
+        show_cols = [c for c in [
+            find_column(low_prod_rows, ["Date", "Work Date", "Log Date"]),
+            find_column(low_prod_rows, ["Name", "Agent Name", "Employee Name", "Team Member"]),
+            "New Listings", "Listing Update", find_hours_column(low_prod_rows), "Productivity (%)"
+        ] if c and c in low_prod_rows.columns]
+        st.dataframe(style_productivity_table(low_prod_rows[show_cols]), use_container_width=True, hide_index=True)
+elif threshold is None:
+    st.info("Productivity alerts for this project will be configured when its tracker rules are provided.")
+else:
+    st.info("Load tracker data to see project notifications.")
 
 # ============================================================
 # DASHBOARD METRICS, TABLE AND CHART
