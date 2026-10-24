@@ -11,6 +11,19 @@ from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT
 
 st.set_page_config(page_title="Agent Pulse", page_icon="⚡", layout="wide")
 
+# Center the contents of all Streamlit data tables across the project.
+st.markdown("""
+<style>
+div[data-testid="stDataFrame"] [role="gridcell"],
+div[data-testid="stDataFrame"] [role="columnheader"],
+div[data-testid="stTable"] th,
+div[data-testid="stTable"] td {
+    text-align: center !important;
+    justify-content: center !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 
 # ============================================================
@@ -135,6 +148,7 @@ def style_productivity_table(df):
     return (
         df.style
         .format({"Productivity (%)": "{:.2f}%"}, na_rep="N/A")
+        .set_properties(**{"text-align": "center"})
         .map(productivity_cell_style, subset=["Productivity (%)"])
     )
 
