@@ -181,7 +181,7 @@ def get_last_week_data(df, date_col):
     return result, note
 
 
-def build_productivity_chart(df, alert_threshold=90, period_label="Selected period"):
+def build_productivity_chart(df, alert_threshold=90, period_label="Selected period", chart_period="Week"):
     """Plot New Listings and Listing Update as separate series over time."""
     date_col = find_column(df, ["Date", "Work Date", "Log Date"])
     new_col = find_column(df, ["New Listings", "New Listing"])
@@ -199,21 +199,29 @@ def build_productivity_chart(df, alert_threshold=90, period_label="Selected peri
         st.info("No dated activity records are available for this period.")
         return
 
-    daily = chart_df.groupby("_date", as_index=False)[["_new", "_updates"]].sum(min_count=1).fillna(0)
-    long_df = daily.melt(
-        id_vars=["_date"], value_vars=["_new", "_updates"],
+    if chart_period == "Month":
+        chart_df["_period"] = chart_df["_date"].dt.to_period("M").dt.to_timestamp()
+        x_label = "Month"
+        date_format = "%b %Y"
+    else:
+        chart_df["_period"] = chart_df["_date"] - pd.to_timedelta(chart_df["_date"].dt.weekday, unit="D")
+        x_label = "Week starting"
+        date_format = "%d %b %Y"
+    activity_by_period = chart_df.groupby("_period", as_index=False)[["_new", "_updates"]].sum(min_count=1).fillna(0)
+    long_df = activity_by_period.melt(
+        id_vars=["_period"], value_vars=["_new", "_updates"],
         var_name="Activity", value_name="Listings",
     )
     long_df["Activity"] = long_df["Activity"].map({
         "_new": "New Listings", "_updates": "Listing Update"
     })
     fig = px.line(
-        long_df, x="_date", y="Listings", color="Activity", markers=True,
-        labels={"_date": "Date", "Listings": "Number of listings", "Activity": "Activity"},
-        title=f"Listing Activity · {period_label}",
+        long_df, x="_period", y="Listings", color="Activity", markers=True,
+        labels={"_period": x_label, "Listings": "Number of listings", "Activity": "Activity"},
+        title=f"Listing Activity · {period_label} · {chart_period}",
     )
     fig.update_layout(
-        xaxis_title="Date", yaxis_title="Listings",
+        xaxis_title=x_label, yaxis_title="Listings",
         hovermode="x unified", legend_title="Activity",
         margin=dict(l=20, r=20, t=60, b=20),
     )
@@ -527,71 +535,6 @@ if selected_project == "Our Shopee":
 
 
 # ============================================================
-# DASHBOARD FILTERS
-# ============================================================
-
-st.subheader("Dashboard Filters")
-if sheet_error:
-    st.error(f"Google Sheets error: {sheet_error}")
-
-date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
-if not df_raw.empty and date_col:
-    filter_dates = parse_date_series(df_raw[date_col])
-    filter_base = df_raw.copy()
-    filter_base["_AP_DATE"] = filter_dates
-    valid_dates = filter_base["_AP_DATE"].dropna()
-    today_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
-    current_monday = today_local - pd.Timedelta(days=today_local.weekday())
-    current_sunday_exclusive = current_monday + pd.Timedelta(days=7)
-
-    available_years = sorted(valid_dates.dt.year.unique().tolist())
-    years = [str(y) for y in available_years]
-    if not years:
-        years = [str(today_local.year)]
-    default_year = str(today_local.year) if str(today_local.year) in years else years[-1]
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    with filter_col1:
-        selected_year = st.selectbox("Year", years, index=years.index(default_year), key="dashboard_year")
-    months_for_year = sorted(valid_dates[valid_dates.dt.year == int(selected_year)].dt.month.unique().tolist())
-    month_labels = {int(m): pd.Timestamp(year=int(selected_year), month=int(m), day=1).strftime("%B") for m in months_for_year}
-    month_options = ["All"] + [month_labels[m] for m in months_for_year]
-    current_month_label = today_local.strftime("%B")
-    default_month = current_month_label if int(selected_year) == today_local.year and current_month_label in month_options else "All"
-    with filter_col2:
-        selected_month = st.selectbox("Month", month_options, index=month_options.index(default_month), key="dashboard_month")
-
-    week_source = filter_base[filter_base["_AP_DATE"].dt.year == int(selected_year)].copy()
-    if selected_month != "All":
-        selected_month_number = next((m for m, label in month_labels.items() if label == selected_month), None)
-        if selected_month_number is not None:
-            week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
-    week_source["_AP_WEEK_START"] = week_source["_AP_DATE"] - pd.to_timedelta(week_source["_AP_DATE"].dt.weekday, unit="D")
-    week_starts = sorted(week_source["_AP_WEEK_START"].dropna().unique().tolist())
-    week_options = ["All"] + [pd.Timestamp(w).strftime("%d %b %Y") for w in week_starts]
-    current_week_label = current_monday.strftime("%d %b %Y")
-    default_week = current_week_label if current_week_label in week_options else "All"
-    with filter_col3:
-        selected_week = st.selectbox("Week (starting Monday)", week_options, index=week_options.index(default_week), key="dashboard_week")
-
-    date_mask = filter_base["_AP_DATE"].dt.year == int(selected_year)
-    if selected_month != "All":
-        date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
-    if selected_week != "All":
-        selected_week_start = pd.to_datetime(selected_week, format="%d %b %Y")
-        date_mask &= (
-            (filter_base["_AP_DATE"] >= selected_week_start)
-            & (filter_base["_AP_DATE"] < selected_week_start + pd.Timedelta(days=7))
-        )
-    df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
-    st.caption("Year, month, and week filters apply together to the productivity chart, table, and summary tiles.")
-elif not df_raw.empty:
-    st.warning("A Date column was not found, so Year / Month / Week filters cannot be applied.")
-    df_filtered = df_raw.copy()
-else:
-    df_filtered = pd.DataFrame()
-
-
-# ============================================================
 
 # AGENT PULSE AI CHAT
 # ============================================================
@@ -744,8 +687,8 @@ if st.button("Execute Tracker Analysis", type="primary"):
 
 st.markdown("### 🔔 Notification Center")
 threshold = PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project)
-if not df_filtered.empty and threshold is not None:
-    notification_df = df_raw.copy() if selected_project == "Superbreakers" else df_filtered.copy()
+if not df_raw.empty and threshold is not None:
+    notification_df = df_raw.copy()
     notification_df, notification_calculation_ok, _ = calculate_productivity(notification_df)
     notification_date_col = find_column(notification_df, ["Date", "Work Date", "Log Date"])
     if selected_project == "Superbreakers" and notification_date_col:
@@ -782,6 +725,73 @@ else:
     st.info("Load tracker data to see project notifications.")
 
 # ============================================================
+# DASHBOARD FILTERS
+# ============================================================
+
+st.markdown("### 🎛️ Dashboard Filters")
+report_type = st.selectbox("Report Type", ["Monthly Report", "Weekly Report"], index=0, key="dashboard_report_type")
+if sheet_error:
+    st.error(f"Google Sheets error: {sheet_error}")
+
+date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
+if not df_raw.empty and date_col:
+    filter_dates = parse_date_series(df_raw[date_col])
+    filter_base = df_raw.copy()
+    filter_base["_AP_DATE"] = filter_dates
+    valid_dates = filter_base["_AP_DATE"].dropna()
+    today_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
+    current_monday = today_local - pd.Timedelta(days=today_local.weekday())
+    current_sunday_exclusive = current_monday + pd.Timedelta(days=7)
+
+    available_years = sorted(valid_dates.dt.year.unique().tolist())
+    years = [str(y) for y in available_years]
+    if not years:
+        years = [str(today_local.year)]
+    default_year = str(today_local.year) if str(today_local.year) in years else years[-1]
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    with filter_col1:
+        selected_year = st.selectbox("Year", years, index=years.index(default_year), key="dashboard_year")
+    months_for_year = sorted(valid_dates[valid_dates.dt.year == int(selected_year)].dt.month.unique().tolist())
+    month_labels = {int(m): pd.Timestamp(year=int(selected_year), month=int(m), day=1).strftime("%B") for m in months_for_year}
+    month_options = ["All"] + [month_labels[m] for m in months_for_year]
+    current_month_label = today_local.strftime("%B")
+    default_month = current_month_label if int(selected_year) == today_local.year and current_month_label in month_options else "All"
+    with filter_col2:
+        selected_month = st.selectbox("Month", month_options, index=month_options.index(default_month), key="dashboard_month")
+
+    week_source = filter_base[filter_base["_AP_DATE"].dt.year == int(selected_year)].copy()
+    if selected_month != "All":
+        selected_month_number = next((m for m, label in month_labels.items() if label == selected_month), None)
+        if selected_month_number is not None:
+            week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
+    week_source["_AP_WEEK_START"] = week_source["_AP_DATE"] - pd.to_timedelta(week_source["_AP_DATE"].dt.weekday, unit="D")
+    week_starts = sorted(week_source["_AP_WEEK_START"].dropna().unique().tolist())
+    week_options = ["All"] + [pd.Timestamp(w).strftime("%d %b %Y") for w in week_starts]
+    current_week_label = current_monday.strftime("%d %b %Y")
+    default_week = current_week_label if current_week_label in week_options else "All"
+    with filter_col3:
+        selected_week = st.selectbox("Week (starting Monday)", week_options, index=week_options.index(default_week), key="dashboard_week")
+
+    date_mask = filter_base["_AP_DATE"].dt.year == int(selected_year)
+    if selected_month != "All":
+        date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
+    if report_type == "Weekly Report" and selected_week != "All":
+        selected_week_start = pd.to_datetime(selected_week, format="%d %b %Y")
+        date_mask &= (
+            (filter_base["_AP_DATE"] >= selected_week_start)
+            & (filter_base["_AP_DATE"] < selected_week_start + pd.Timedelta(days=7))
+        )
+    df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
+    st.caption("The report type and date filters control both the productivity table and listing chart. Monthly reports use the selected year/month; weekly reports also apply the selected week.")
+elif not df_raw.empty:
+    st.warning("A Date column was not found, so Year / Month / Week filters cannot be applied.")
+    df_filtered = df_raw.copy()
+else:
+    df_filtered = pd.DataFrame()
+
+
+
+# ============================================================
 # DASHBOARD METRICS, TABLE AND CHART
 # ============================================================
 
@@ -791,9 +801,11 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
     if dashboard_df.empty:
         st.info("No records match the selected Year / Month / Week filters.")
     elif dashboard_calculation_ok:
+        st.markdown("### 📈 Listing Chart")
+        chart_period = st.radio("Chart grouping", ["Week", "Month"], horizontal=True, key="dashboard_chart_period")
         build_productivity_chart(
             dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90),
-            period_label="Selected Year / Month / Week",
+            period_label=report_type, chart_period=chart_period,
         )
 
         numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
@@ -820,7 +832,7 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
         current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
         st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
 
-        st.subheader("Productivity Table")
+        st.markdown("### 📋 Productivity Table")
         st.caption(
             "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
             "100% or above | N/A = zero/missing hours or missing listing counts."
