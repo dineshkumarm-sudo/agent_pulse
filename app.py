@@ -148,24 +148,22 @@ def dataframe_for_download(df):
     return result
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_sheet_safely(url, sheet_name="Daily_Tracker"):
+    """Read a tracker once and reuse it for five minutes to avoid Sheets API quota spikes."""
     client = get_gsheet_client()
     match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
     sheet = client.open_by_key(match.group(1)) if match else client.open_by_url(url)
 
-    # Prefer the exact worksheet tab named in the URL (gid), when supplied.
+    # Prefer the exact worksheet tab named in the URL, when supplied.
     gid_match = re.search(r"(?:[?&#])gid=(\d+)", url)
     if gid_match:
+        worksheet = sheet.get_worksheet_by_id(int(gid_match.group(1)))
+    else:
         try:
-            worksheet = sheet.get_worksheet_by_id(int(gid_match.group(1)))
-            return pd.DataFrame(worksheet.get_all_records())
+            worksheet = sheet.worksheet(sheet_name)
         except Exception:
-            pass
-
-    try:
-        worksheet = sheet.worksheet(sheet_name)
-    except Exception:
-        worksheet = sheet.get_worksheet(0)
+            worksheet = sheet.get_worksheet(0)
     return pd.DataFrame(worksheet.get_all_records())
 
 
