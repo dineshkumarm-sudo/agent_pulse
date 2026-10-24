@@ -242,6 +242,173 @@ def build_daily_alerts(df, threshold=90):
     return alerts
 
 
+def render_our_shopee_dashboard(df):
+    """Render file-based production tracking, ageing alerts, and period summaries."""
+    st.markdown("### Our Shopee · File Delivery Dashboard")
+    st.caption("Track input files, production deadlines, delivered volumes, and ageing work in progress.")
+
+    if df.empty:
+        st.warning("The Our Shopee tracker returned no records. Check the worksheet and service-account access.")
+        return
+
+    def get_col(candidates):
+        return find_column(df, candidates)
+
+    aliases = {
+        "supplier": ["Supplier Name", "Supplier"],
+        "file": ["Client File Name", "Client Filename", "File Name", "Client File"],
+        "received": ["Input Received Date", "Received Date", "Input Date"],
+        "input_skus": ["Input SKU Count", "Input SKUs", "SKU Count", "Received SKU Count"],
+        "start": ["Production Start Date", "Production Started Date", "Start Date"],
+        "delivery": ["Delivery Date", "Delivered Date", "Date Delivered"],
+        "delivered_skus": ["Delivered SKU Count", "Delivered SKUs", "SKU Delivered", "Output SKU Count"],
+        "remarks": ["Remarks", "Remark", "Comments", "Notes"],
+    }
+    cols = {key: get_col(options) for key, options in aliases.items()}
+    required = ["file", "received", "input_skus", "start", "delivered_skus"]
+    missing = [aliases[key][0] for key in required if cols[key] is None]
+    if missing:
+        st.error("Some required columns could not be identified: " + ", ".join(missing))
+        st.write("Columns found in the tracker:", list(df.columns))
+        st.info("Rename the columns to match the requested labels, or share the exact header names so the mapping can be adjusted.")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        return
+
+    work = pd.DataFrame(index=df.index)
+    for key, col in cols.items():
+        work[key] = df[col] if col is not None else ""
+    for key in ["received", "start", "delivery"]:
+        work[key] = pd.to_datetime(work[key], errors="coerce", dayfirst=True)
+    for key in ["input_skus", "delivered_skus"]:
+        work[key] = pd.to_numeric(
+            work[key].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce"
+        ).fillna(0)
+    work["file"] = work["file"].fillna("").astype(str).str.strip()
+    work["supplier"] = work["supplier"].fillna("").astype(str).str.strip()
+    work["remarks"] = work["remarks"].fillna("").astype(str)
+    work["remaining_skus"] = (work["input_skus"] - work["delivered_skus"]).clip(lower=0)
+    work["target_days"] = (work["input_skus"] / 100).apply(lambda value: int(value) if value == int(value) else int(value) + 1)
+    work["due_date"] = work["start"] + pd.to_timedelta(work["target_days"], unit="D")
+    today = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
+
+    def status_for(row):
+        if row["input_skus"] > 0 and row["delivered_skus"] >= row["input_skus"]:
+            return "Delivered"
+        if pd.isna(row["start"]):
+            return "Awaiting production start"
+        if row["due_date"] < today:
+            return "Overdue"
+        return "In progress"
+
+    work["Status"] = work.apply(status_for, axis=1)
+    work["Days Until Due"] = work["due_date"].apply(
+        lambda value: (value - today).days if pd.notna(value) else pd.NA
+    )
+    work["due_date_display"] = work["due_date"].dt.strftime("%d %b %Y").fillna("—")
+    work["received_week"] = work["received"].dt.to_period("W-SUN").dt.start_time
+    work["delivered_week"] = work["delivery"].dt.to_period("W-SUN").dt.start_time
+    work["received_month"] = work["received"].dt.to_period("M").astype(str).replace("NaT", "")
+    work["delivered_month"] = work["delivery"].dt.to_period("M").astype(str).replace("NaT", "")
+
+    total_inputs = int(work["input_skus"].sum())
+    total_delivered = int(work["delivered_skus"].sum())
+    overdue = work[work["Status"] == "Overdue"]
+    open_work = work[work["Status"].isin(["Overdue", "In progress", "Awaiting production start"])]
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Input Files", int((work["file"] != "").sum()))
+    k2.metric("Input SKU Volume", f"{total_inputs:,}")
+    k3.metric("Delivered SKU Volume", f"{total_delivered:,}")
+    k4.metric("Overdue Files", len(overdue))
+
+    st.markdown("#### 🔔 Delivery Alerts")
+    if not overdue.empty:
+        st.warning(f"{len(overdue)} file(s) are past their target delivery date and are not fully delivered.")
+        alert_view = overdue[["supplier", "file", "input_skus", "delivered_skus", "remaining_skus", "start", "due_date_display", "remarks"]].copy()
+        alert_view.columns = ["Supplier Name", "Client File Name", "Input SKU Count", "Delivered SKU Count", "Remaining SKUs", "Production Start Date", "Target Delivery Date", "Remarks"]
+        st.dataframe(
+            alert_view.style.map(
+                lambda _: "background-color: #FDE2E2; color: #991B1B; font-weight: bold;"
+            , subset=["Client File Name"]),
+            use_container_width=True, hide_index=True
+        )
+    else:
+        st.success("No overdue files based on the current tracker data.")
+    if not open_work.empty:
+        with st.expander(f"View all open files ({len(open_work)})", expanded=not overdue.empty):
+            open_view = open_work[["supplier", "file", "input_skus", "delivered_skus", "remaining_skus", "start", "due_date_display", "Status", "remarks"]].copy()
+            open_view.columns = ["Supplier Name", "Client File Name", "Input SKU Count", "Delivered SKU Count", "Remaining SKUs", "Production Start Date", "Target Delivery Date", "Status", "Remarks"]
+            def file_style(value):
+                return "background-color: #FDE2E2; color: #991B1B; font-weight: bold;" if value in set(overdue["file"]) else "background-color: #FEF3C7; color: #92400E;"
+            st.dataframe(open_view.style.map(file_style, subset=["Client File Name"]), use_container_width=True, hide_index=True)
+
+    st.markdown("#### 📅 Weekly Inputs & Deliveries")
+    st.caption("Weeks run Monday through Sunday. Inputs are grouped by Input Received Date; delivered volume is grouped by Delivery Date.")
+    week_keys = sorted(set(work["received_week"].dropna().tolist()) | set(work["delivered_week"].dropna().tolist()))
+    if week_keys:
+        weekly_rows = []
+        for week_start in week_keys:
+            received_rows = work[work["received_week"] == week_start]
+            delivered_rows = work[work["delivered_week"] == week_start]
+            weekly_rows.append({
+                "Week": f"{week_start:%d %b} – {(week_start + pd.Timedelta(days=6)):%d %b %Y}",
+                "Input Files": int((received_rows["file"] != "").sum()),
+                "Input SKU Volume": int(received_rows["input_skus"].sum()),
+                "Delivered Files": int((delivered_rows["delivered_skus"] > 0).sum()),
+                "Delivered SKU Volume": int(delivered_rows["delivered_skus"].sum()),
+            })
+        st.dataframe(pd.DataFrame(weekly_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No valid input-received or delivery dates are available for weekly summaries.")
+
+    st.markdown("#### 🗓️ Monthly Inputs & Deliveries")
+    month_keys = sorted(set(work["received_month"].loc[work["received_month"] != ""]) | set(work["delivered_month"].loc[work["delivered_month"] != ""]))
+    if month_keys:
+        monthly_rows = []
+        for month in month_keys:
+            received_rows = work[work["received_month"] == month]
+            delivered_rows = work[work["delivered_month"] == month]
+            monthly_rows.append({
+                "Month": month,
+                "Input Files": int((received_rows["file"] != "").sum()),
+                "Input SKU Volume": int(received_rows["input_skus"].sum()),
+                "Delivered Files": int((delivered_rows["delivered_skus"] > 0).sum()),
+                "Delivered SKU Volume": int(delivered_rows["delivered_skus"].sum()),
+            })
+        st.dataframe(pd.DataFrame(monthly_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No valid input-received or delivery dates are available for monthly summaries.")
+
+    st.markdown("#### 📋 File Tracker")
+    display = pd.DataFrame({
+        "Supplier Name": work["supplier"],
+        "Client File Name": work["file"],
+        "Input Received Date": work["received"].dt.strftime("%d %b %Y").fillna(""),
+        "Input SKU Count": work["input_skus"].astype(int),
+        "Production Start Date": work["start"].dt.strftime("%d %b %Y").fillna(""),
+        "Delivery Date": work["delivery"].dt.strftime("%d %b %Y").fillna(""),
+        "Delivered SKU Count": work["delivered_skus"].astype(int),
+        "Remarks": work["remarks"],
+        "Target Delivery Date": work["due_date_display"],
+        "Remaining SKUs": work["remaining_skus"].astype(int),
+        "Status": work["Status"],
+    })
+    overdue_names = set(work.loc[work["Status"] == "Overdue", "file"])
+    def display_file_style(value):
+        if value in overdue_names:
+            return "background-color: #FDE2E2; color: #991B1B; font-weight: bold;"
+        return ""
+    st.dataframe(display.style.map(display_file_style, subset=["Client File Name"]), use_container_width=True, hide_index=True)
+    st.download_button(
+        "Download Our Shopee tracker view as CSV",
+        data=display.to_csv(index=False).encode("utf-8"),
+        file_name="our_shopee_tracker_dashboard.csv",
+        mime="text/csv",
+        key="our_shopee_download"
+    )
+
+
 # ============================================================
 # SIDEBAR, PROJECT DIRECTORY AND NOTIFICATION SETTINGS
 # ============================================================
@@ -272,6 +439,11 @@ try:
     df_raw = fetch_sheet_safely(sheet_url)
 except Exception as exc:
     sheet_error = f"{type(exc).__name__}: {exc}"
+
+
+if selected_project == "Our Shopee":
+    render_our_shopee_dashboard(df_raw)
+    st.stop()
 
 
 # ============================================================
