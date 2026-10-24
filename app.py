@@ -11,15 +11,18 @@ from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT
 
 st.set_page_config(page_title="Agent Pulse", page_icon="⚡", layout="wide")
 
-# Center the contents of all Streamlit data tables across the project.
+# Center cell contents and headers in Streamlit's table and dataframe views.
 st.markdown("""
 <style>
-div[data-testid="stDataFrame"] [role="gridcell"],
-div[data-testid="stDataFrame"] [role="columnheader"],
+div[data-testid="stDataFrame"] [role="gridcell"] > *,
+div[data-testid="stDataFrame"] [role="columnheader"] > *,
 div[data-testid="stTable"] th,
 div[data-testid="stTable"] td {
     text-align: center !important;
     justify-content: center !important;
+}
+div[data-testid="stDataFrame"] [role="gridcell"] {
+    text-align: center !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -708,6 +711,17 @@ if st.button("Execute Tracker Analysis", type="primary"):
 # ============================================================
 
 st.markdown("### 🔔 Notification Center")
+
+# Keep the current-month New Listings count in the Notification Center.
+dashboard_date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
+all_dates = parse_date_series(df_raw[dashboard_date_col]) if dashboard_date_col else pd.Series(pd.NaT, index=df_raw.index)
+month_start_now = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize().replace(day=1)
+next_month_start_now = month_start_now + pd.offsets.MonthBegin(1)
+current_month_df = df_raw.loc[(all_dates >= month_start_now) & (all_dates < next_month_start_now)]
+current_month_new_col = find_column(current_month_df, ["New Listings", "New Listing"])
+current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
+st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
+
 threshold = PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project)
 if not df_raw.empty and threshold is not None:
     notification_df = df_raw.copy()
@@ -884,7 +898,11 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
             if col and col in table_df.columns:
                 total_row[col] = parse_count(table_df[col]).sum()
         table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
-        st.dataframe(table_df, use_container_width=True, hide_index=True)
+        st.dataframe(
+            table_df.style.set_properties(**{"text-align": "center"}),
+            use_container_width=True,
+            hide_index=True,
+        )
         st.download_button(
             "Download dashboard data as CSV",
             data=table_df.to_csv(index=False).encode("utf-8"),
@@ -904,15 +922,7 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
         kpi2.metric("New Listings", f"{total_new:,.0f}")
         kpi3.metric("Listing Updates", f"{total_updates:,.0f}")
 
-        # Keep the current-month New Listings count visible without adding a fourth tile.
-        dashboard_date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
-        all_dates = parse_date_series(df_raw[dashboard_date_col]) if dashboard_date_col else pd.Series(pd.NaT, index=df_raw.index)
-        month_start_now = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize().replace(day=1)
-        next_month_start_now = month_start_now + pd.offsets.MonthBegin(1)
-        current_month_df = df_raw.loc[(all_dates >= month_start_now) & (all_dates < next_month_start_now)]
-        current_month_new_col = find_column(current_month_df, ["New Listings", "New Listing"])
-        current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
-        st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
+
 
 
     else:
