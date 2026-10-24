@@ -324,7 +324,7 @@ else:
 
 st.markdown("""
 <style>
-.block-container {padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1500px;}
+.block-container {padding-top: 3rem; padding-bottom: 2rem; max-width: 1500px;}
 [data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.18);}
 .ap-hero {
   padding: 1.7rem 1.8rem; border-radius: 22px; margin: .2rem 0 1.2rem 0;
