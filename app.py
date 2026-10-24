@@ -572,37 +572,8 @@ calculation_ok = False
 calculation_note = ""
 if not df_filtered.empty and selected_project != "Our Shopee":
     df_filtered, calculation_ok, calculation_note = calculate_productivity(df_filtered)
-    if calculation_ok:
-        st.caption(
-            "Productivity adds target achievement for each activity: 20 New Listings "
-            "and 25 Listing Updates per 4 hours. Targets scale proportionally with hours worked."
-        )
-    else:
+    if not calculation_ok:
         st.warning(calculation_note)
-
-
-# ============================================================
-# TRACKER ANALYSIS AND AUDIT
-# ============================================================
-
-if st.button("Execute Tracker Analysis", type="primary"):
-    if df_filtered.empty:
-        st.warning("No data matches the selected filters.")
-    else:
-        try:
-            results = analyze_project_productivity(df_filtered)
-            if not isinstance(results, dict):
-                results = {"analysis_output": results}
-            results["processed_df"] = df_filtered.copy()
-            if calculation_ok:
-                results["daily_alerts"] = build_daily_alerts(
-                    df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)
-                )
-            st.session_state["analysis_results"] = results
-            st.session_state["active_df"] = df_filtered.copy()
-            st.success("Tracker analysis completed.")
-        except Exception as exc:
-            st.error(f"Analysis failed: {type(exc).__name__}: {exc}")
 
 
 # ============================================================
