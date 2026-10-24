@@ -181,8 +181,8 @@ def get_last_week_data(df, date_col):
     return result, note
 
 
-def build_productivity_chart(df, alert_threshold=90, period_label="Selected period", chart_period="Week"):
-    """Plot New Listings and Listing Update as separate series over time."""
+def build_productivity_chart(df, alert_threshold=90, period_label="Selected period", chart_period="Day"):
+    """Plot daily New Listings and Listing Update with both counts in each hover tooltip."""
     date_col = find_column(df, ["Date", "Work Date", "Log Date"])
     new_col = find_column(df, ["New Listings", "New Listing"])
     update_col = find_column(df, ["Listing Update"])
@@ -191,43 +191,50 @@ def build_productivity_chart(df, alert_threshold=90, period_label="Selected peri
         return
 
     chart_df = df.copy()
-    chart_df["_date"] = parse_date_series(chart_df[date_col])
-    chart_df["_new"] = parse_count(chart_df[new_col]) if new_col else 0
-    chart_df["_updates"] = parse_count(chart_df[update_col]) if update_col else 0
+    chart_df["_date"] = parse_date_series(chart_df[date_col]).dt.normalize()
+    chart_df["_new"] = parse_count(chart_df[new_col]).fillna(0) if new_col else 0
+    chart_df["_updates"] = parse_count(chart_df[update_col]).fillna(0) if update_col else 0
     chart_df = chart_df.dropna(subset=["_date"])
     if chart_df.empty:
         st.info("No dated activity records are available for this period.")
         return
 
-    if chart_period == "Month":
-        chart_df["_period"] = chart_df["_date"].dt.to_period("M").dt.to_timestamp()
-        x_label = "Month"
-        date_format = "%b %Y"
-    else:
-        chart_df["_period"] = chart_df["_date"] - pd.to_timedelta(chart_df["_date"].dt.weekday, unit="D")
-        x_label = "Week starting"
-        date_format = "%d %b %Y"
-    activity_by_period = chart_df.groupby("_period", as_index=False)[["_new", "_updates"]].sum(min_count=1).fillna(0)
-    long_df = activity_by_period.melt(
-        id_vars=["_period"], value_vars=["_new", "_updates"],
-        var_name="Activity", value_name="Listings",
-    )
-    long_df["Activity"] = long_df["Activity"].map({
-        "_new": "New Listings", "_updates": "Listing Update"
-    })
+    # Aggregate by date so the hover values represent all activity on that date.
+    daily = chart_df.groupby("_date", as_index=False)[["_new", "_updates"]].sum()
+    daily = daily.sort_values("_date")
+    hover_data = daily[["_new", "_updates"]].to_numpy()
+
     fig = px.line(
-        long_df, x="_period", y="Listings", color="Activity", markers=True,
-        labels={"_period": x_label, "Listings": "Number of listings", "Activity": "Activity"},
-        title=f"Listing Activity · {period_label} · {chart_period}",
+        daily, x="_date", y="_new", markers=True,
+        custom_data=["_new", "_updates"],
+        labels={"_date": "Date", "_new": "New Listings"},
+        title=f"Listing Activity · {period_label} · Daily",
+    )
+    fig.update_traces(
+        name="New Listings",
+        hovertemplate=(
+            "<b>Date: %{x|%d %b %Y}</b><br>"
+            "New Listings: %{customdata[0]:,.0f}<br>"
+            "Listing Updates: %{customdata[1]:,.0f}<extra></extra>"
+        ),
+    )
+    fig.add_scatter(
+        x=daily["_date"], y=daily["_updates"], mode="lines+markers",
+        name="Listing Updates",
+        customdata=hover_data,
+        hovertemplate=(
+            "<b>Date: %{x|%d %b %Y}</b><br>"
+            "New Listings: %{customdata[0]:,.0f}<br>"
+            "Listing Updates: %{customdata[1]:,.0f}<extra></extra>"
+        ),
     )
     fig.update_layout(
-        xaxis_title=x_label, yaxis_title="Listings",
-        hovermode="x unified", legend_title="Activity",
+        xaxis_title="Date", yaxis_title="Number of listings",
+        hovermode="closest", legend_title="Activity",
         margin=dict(l=20, r=20, t=60, b=20),
     )
     st.subheader("Listing Activity Chart")
     st.plotly_chart(fig, use_container_width=True)
-
 
 def build_daily_alerts(df, threshold=90):
     if df.empty or "Productivity (%)" not in df.columns:
