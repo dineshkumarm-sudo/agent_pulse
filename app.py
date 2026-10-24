@@ -232,7 +232,6 @@ def build_productivity_chart(df, alert_threshold=90):
         hovermode="closest", legend_title="Activity",
         margin=dict(l=20, r=20, t=20, b=20),
     )
-    st.subheader("Listing Activity Chart")
     st.plotly_chart(fig, use_container_width=True)
 
 def build_daily_alerts(df, threshold=90):
