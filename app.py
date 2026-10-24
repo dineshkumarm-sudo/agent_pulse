@@ -637,179 +637,182 @@ if selected_project == "Our Shopee":
     render_our_shopee_dashboard(df_raw)
 
 
-# ============================================================
-# DASHBOARD FILTERS
-# ============================================================
+if selected_project != "Our Shopee":
+    # ============================================================
+    # DASHBOARD FILTERS
+    # ============================================================
 
-st.markdown("### 🎛️ Dashboard Filters")
-report_type = st.selectbox("Report Type", ["Monthly Report", "Weekly Report"], index=0, key="dashboard_report_type")
-if sheet_error:
-    st.error(f"Google Sheets error: {sheet_error}")
+    st.markdown("### 🎛️ Dashboard Filters")
+    report_type = st.selectbox("Report Type", ["Monthly Report", "Weekly Report"], index=0, key="dashboard_report_type")
+    if sheet_error:
+        st.error(f"Google Sheets error: {sheet_error}")
 
-date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
-if not df_raw.empty and date_col:
-    filter_dates = parse_date_series(df_raw[date_col])
-    filter_base = df_raw.copy()
-    filter_base["_AP_DATE"] = filter_dates
-    valid_dates = filter_base["_AP_DATE"].dropna()
-    today_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
-    current_monday = today_local - pd.Timedelta(days=today_local.weekday())
-    current_sunday_exclusive = current_monday + pd.Timedelta(days=7)
+    date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
+    if not df_raw.empty and date_col:
+        filter_dates = parse_date_series(df_raw[date_col])
+        filter_base = df_raw.copy()
+        filter_base["_AP_DATE"] = filter_dates
+        valid_dates = filter_base["_AP_DATE"].dropna()
+        today_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
+        current_monday = today_local - pd.Timedelta(days=today_local.weekday())
+        current_sunday_exclusive = current_monday + pd.Timedelta(days=7)
 
-    available_years = sorted(valid_dates.dt.year.unique().tolist())
-    years = [str(y) for y in available_years]
-    if not years:
-        years = [str(today_local.year)]
-    default_year = str(today_local.year) if str(today_local.year) in years else years[-1]
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
-    with filter_col1:
-        selected_year = st.selectbox("Year", years, index=years.index(default_year), key="dashboard_year")
-    months_for_year = sorted(valid_dates[valid_dates.dt.year == int(selected_year)].dt.month.unique().tolist())
-    month_labels = {int(m): pd.Timestamp(year=int(selected_year), month=int(m), day=1).strftime("%B") for m in months_for_year}
-    month_options = ["All"] + [month_labels[m] for m in months_for_year]
-    current_month_label = today_local.strftime("%B")
-    default_month = current_month_label if int(selected_year) == today_local.year and current_month_label in month_options else "All"
-    with filter_col2:
-        selected_month = st.selectbox("Month", month_options, index=month_options.index(default_month), key="dashboard_month")
+        available_years = sorted(valid_dates.dt.year.unique().tolist())
+        years = [str(y) for y in available_years]
+        if not years:
+            years = [str(today_local.year)]
+        default_year = str(today_local.year) if str(today_local.year) in years else years[-1]
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with filter_col1:
+            selected_year = st.selectbox("Year", years, index=years.index(default_year), key="dashboard_year")
+        months_for_year = sorted(valid_dates[valid_dates.dt.year == int(selected_year)].dt.month.unique().tolist())
+        month_labels = {int(m): pd.Timestamp(year=int(selected_year), month=int(m), day=1).strftime("%B") for m in months_for_year}
+        month_options = ["All"] + [month_labels[m] for m in months_for_year]
+        current_month_label = today_local.strftime("%B")
+        default_month = current_month_label if int(selected_year) == today_local.year and current_month_label in month_options else "All"
+        with filter_col2:
+            selected_month = st.selectbox("Month", month_options, index=month_options.index(default_month), key="dashboard_month")
 
-    week_source = filter_base[filter_base["_AP_DATE"].dt.year == int(selected_year)].copy()
-    if selected_month != "All":
-        selected_month_number = next((m for m, label in month_labels.items() if label == selected_month), None)
-        if selected_month_number is not None:
-            week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
+        week_source = filter_base[filter_base["_AP_DATE"].dt.year == int(selected_year)].copy()
+        if selected_month != "All":
+            selected_month_number = next((m for m, label in month_labels.items() if label == selected_month), None)
+            if selected_month_number is not None:
+                week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
 
-    # Week 1 begins on the month's first calendar day and ends on that Sunday.
-    # Each following week runs Monday through Sunday, never crossing into another month.
-    week_periods = []
-    week_lookup = {}
-    for month_number in sorted(week_source["_AP_DATE"].dt.month.dropna().unique().tolist()):
-        month_dates = week_source.loc[week_source["_AP_DATE"].dt.month == month_number, "_AP_DATE"]
-        month_start = pd.Timestamp(year=int(selected_year), month=int(month_number), day=1)
-        next_month_start = month_start + pd.offsets.MonthBegin(1)
-        first_sunday_exclusive = month_start + pd.Timedelta(days=(6 - month_start.weekday()) % 7 + 1)
-        # Generate every calendar week in the month, even if no tracker row exists for a week.
-        period_starts = [month_start]
-        next_period_start = first_sunday_exclusive
-        while next_period_start < next_month_start:
-            period_starts.append(next_period_start)
-            next_period_start += pd.Timedelta(days=7)
-        for week_number, period_start in enumerate(period_starts, start=1):
-            period_end = min(
-                first_sunday_exclusive if week_number == 1 else period_start + pd.Timedelta(days=7),
-                next_month_start,
+        # Week 1 begins on the month's first calendar day and ends on that Sunday.
+        # Each following week runs Monday through Sunday, never crossing into another month.
+        week_periods = []
+        week_lookup = {}
+        for month_number in sorted(week_source["_AP_DATE"].dt.month.dropna().unique().tolist()):
+            month_dates = week_source.loc[week_source["_AP_DATE"].dt.month == month_number, "_AP_DATE"]
+            month_start = pd.Timestamp(year=int(selected_year), month=int(month_number), day=1)
+            next_month_start = month_start + pd.offsets.MonthBegin(1)
+            first_sunday_exclusive = month_start + pd.Timedelta(days=(6 - month_start.weekday()) % 7 + 1)
+            # Generate every calendar week in the month, even if no tracker row exists for a week.
+            period_starts = [month_start]
+            next_period_start = first_sunday_exclusive
+            while next_period_start < next_month_start:
+                period_starts.append(next_period_start)
+                next_period_start += pd.Timedelta(days=7)
+            for week_number, period_start in enumerate(period_starts, start=1):
+                period_end = min(
+                    first_sunday_exclusive if week_number == 1 else period_start + pd.Timedelta(days=7),
+                    next_month_start,
+                )
+                month_name = month_start.strftime("%B")
+                label = f"Week {week_number}" if selected_month != "All" else f"{month_name} - Week {week_number}"
+                week_periods.append((label, period_start, period_end, month_number))
+                week_lookup[label] = (period_start, period_end)
+
+        week_options = ["All"] + [period[0] for period in week_periods]
+        current_month_start = today_local.replace(day=1)
+        current_first_sunday_exclusive = current_month_start + pd.Timedelta(days=(6 - current_month_start.weekday()) % 7 + 1)
+        if today_local < current_first_sunday_exclusive:
+            current_period_start = current_month_start
+        else:
+            current_period_start = today_local - pd.Timedelta(days=today_local.weekday())
+        current_week_number = 1 + sum(
+            1 for _, start, _, month_number in week_periods
+            if month_number == today_local.month and start < current_period_start
+        )
+        current_week_label = (
+            f"Week {current_week_number}" if selected_month != "All"
+            else f"{today_local.strftime('%B')} - Week {current_week_number}"
+        )
+        default_week = current_week_label if current_week_label in week_options else "All"
+        with filter_col3:
+            selected_week = st.selectbox("Week", week_options, index=week_options.index(default_week), key="dashboard_week")
+
+        date_mask = filter_base["_AP_DATE"].dt.year == int(selected_year)
+        if selected_month != "All":
+            date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
+        if report_type == "Weekly Report" and selected_week != "All":
+            selected_week_start, selected_week_end = week_lookup[selected_week]
+            date_mask &= (
+                (filter_base["_AP_DATE"] >= selected_week_start)
+                & (filter_base["_AP_DATE"] < selected_week_end)
             )
-            month_name = month_start.strftime("%B")
-            label = f"Week {week_number}" if selected_month != "All" else f"{month_name} - Week {week_number}"
-            week_periods.append((label, period_start, period_end, month_number))
-            week_lookup[label] = (period_start, period_end)
-
-    week_options = ["All"] + [period[0] for period in week_periods]
-    current_month_start = today_local.replace(day=1)
-    current_first_sunday_exclusive = current_month_start + pd.Timedelta(days=(6 - current_month_start.weekday()) % 7 + 1)
-    if today_local < current_first_sunday_exclusive:
-        current_period_start = current_month_start
+        df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
+        st.caption("The report type and date filters control both the productivity table and listing chart. Monthly reports use the selected year/month; weekly reports also apply the selected week.")
+    elif not df_raw.empty:
+        st.warning("A Date column was not found, so Year / Month / Week filters cannot be applied.")
+        df_filtered = df_raw.copy()
     else:
-        current_period_start = today_local - pd.Timedelta(days=today_local.weekday())
-    current_week_number = 1 + sum(
-        1 for _, start, _, month_number in week_periods
-        if month_number == today_local.month and start < current_period_start
-    )
-    current_week_label = (
-        f"Week {current_week_number}" if selected_month != "All"
-        else f"{today_local.strftime('%B')} - Week {current_week_number}"
-    )
-    default_week = current_week_label if current_week_label in week_options else "All"
-    with filter_col3:
-        selected_week = st.selectbox("Week", week_options, index=week_options.index(default_week), key="dashboard_week")
-
-    date_mask = filter_base["_AP_DATE"].dt.year == int(selected_year)
-    if selected_month != "All":
-        date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
-    if report_type == "Weekly Report" and selected_week != "All":
-        selected_week_start, selected_week_end = week_lookup[selected_week]
-        date_mask &= (
-            (filter_base["_AP_DATE"] >= selected_week_start)
-            & (filter_base["_AP_DATE"] < selected_week_end)
-        )
-    df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
-    st.caption("The report type and date filters control both the productivity table and listing chart. Monthly reports use the selected year/month; weekly reports also apply the selected week.")
-elif not df_raw.empty:
-    st.warning("A Date column was not found, so Year / Month / Week filters cannot be applied.")
-    df_filtered = df_raw.copy()
-else:
-    df_filtered = pd.DataFrame()
+        df_filtered = pd.DataFrame()
 
 
 
-# ============================================================
-# DASHBOARD METRICS, TABLE AND CHART
-# ============================================================
+    # ============================================================
+    # DASHBOARD METRICS, TABLE AND CHART
+    # ============================================================
 
-if selected_project != "Our Shopee" and not df_filtered.empty:
-    dashboard_df = df_filtered.copy()
-    dashboard_df, dashboard_calculation_ok, dashboard_calculation_note = calculate_productivity(dashboard_df)
-    if dashboard_df.empty:
-        st.info("No records match the selected Year / Month / Week filters.")
-    elif dashboard_calculation_ok:
-        st.markdown("### 📋 Productivity Table")
-        st.caption(
-            "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
-            "100% or above | N/A = zero/missing hours or missing listing counts."
-        )
+    if selected_project != "Our Shopee" and not df_filtered.empty:
+        dashboard_df = df_filtered.copy()
+        dashboard_df, dashboard_calculation_ok, dashboard_calculation_note = calculate_productivity(dashboard_df)
+        if dashboard_df.empty:
+            st.info("No records match the selected Year / Month / Week filters.")
+        elif dashboard_calculation_ok:
+            st.markdown("### 📋 Productivity Table")
+            st.caption(
+                "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
+                "100% or above | N/A = zero/missing hours or missing listing counts."
+            )
 
-        # Resolve the source columns and totals before building the TOTAL row.
-        new_col = find_column(dashboard_df, ["New Listings", "New Listing"])
-        existing_col = find_column(dashboard_df, ["Listing Update"])
-        hours_col = find_hours_column(dashboard_df)
-        total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
-        total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
+            # Resolve the source columns and totals before building the TOTAL row.
+            new_col = find_column(dashboard_df, ["New Listings", "New Listing"])
+            existing_col = find_column(dashboard_df, ["Listing Update"])
+            hours_col = find_hours_column(dashboard_df)
+            total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
+            total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
 
-        # Show only the four requested tracker fields in the table and CSV.
-        date_display_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
-        display_columns = [col for col in [date_display_col, new_col, existing_col, hours_col] if col]
-        table_df = dashboard_df[display_columns].copy()
-        total_row = {col: "" for col in display_columns}
-        if date_display_col:
-            total_row[date_display_col] = "TOTAL"
-        for col in [new_col, existing_col, hours_col]:
-            if col and col in table_df.columns:
-                total_row[col] = parse_count(table_df[col]).sum()
-        table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
-        st.dataframe(
-            table_df.style.set_properties(**{"text-align": "center"}),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.download_button(
-            "Download dashboard data as CSV",
-            data=table_df.to_csv(index=False).encode("utf-8"),
-            file_name="agent_pulse_productivity.csv",
-            mime="text/csv", key="dashboard_productivity_download",
-        )
+            # Show only the four requested tracker fields in the table and CSV.
+            date_display_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
+            display_columns = [col for col in [date_display_col, new_col, existing_col, hours_col] if col]
+            table_df = dashboard_df[display_columns].copy()
+            total_row = {col: "" for col in display_columns}
+            if date_display_col:
+                total_row[date_display_col] = "TOTAL"
+            for col in [new_col, existing_col, hours_col]:
+                if col and col in table_df.columns:
+                    total_row[col] = parse_count(table_df[col]).sum()
+            table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
+            st.dataframe(
+                table_df.style.set_properties(**{"text-align": "center"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.download_button(
+                "Download dashboard data as CSV",
+                data=table_df.to_csv(index=False).encode("utf-8"),
+                file_name="agent_pulse_productivity.csv",
+                mime="text/csv", key="dashboard_productivity_download",
+            )
 
-        st.markdown("### Listing Activity Chart")
-        build_productivity_chart(dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90))
+            st.markdown("### Listing Activity Chart")
+            build_productivity_chart(dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90))
 
-        numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
-        valid_prod = numeric_prod.dropna()
+            numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
+            valid_prod = numeric_prod.dropna()
 
-        # Exactly three summary tiles below the chart, reflecting the selected filters.
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("Average Productivity", f"{valid_prod.mean():.2f}%" if not valid_prod.empty else "N/A")
-        kpi2.metric("New Listings", f"{total_new:,.0f}")
-        kpi3.metric("Listing Updates", f"{total_updates:,.0f}")
+            # Exactly three summary tiles below the chart, reflecting the selected filters.
+            kpi1, kpi2, kpi3 = st.columns(3)
+            kpi1.metric("Average Productivity", f"{valid_prod.mean():.2f}%" if not valid_prod.empty else "N/A")
+            kpi2.metric("New Listings", f"{total_new:,.0f}")
+            kpi3.metric("Listing Updates", f"{total_updates:,.0f}")
 
 
 
 
-    else:
-        st.info(
-            "The tracker data is available, but productivity cannot be calculated until the required source columns are found. "
-            + dashboard_calculation_note
-        )
-        st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
-elif selected_project != "Our Shopee":
-    st.info("Select a project and adjust the filters to view the dashboard.")
+        else:
+            st.info(
+                "The tracker data is available, but productivity cannot be calculated until the required source columns are found. "
+                + dashboard_calculation_note
+            )
+            st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
+    elif selected_project != "Our Shopee":
+        st.info("Select a project and adjust the filters to view the dashboard.")
+
+
 
 
 st.sidebar.markdown("---")
