@@ -152,6 +152,16 @@ def fetch_sheet_safely(url, sheet_name="Daily_Tracker"):
     client = get_gsheet_client()
     match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
     sheet = client.open_by_key(match.group(1)) if match else client.open_by_url(url)
+
+    # Prefer the exact worksheet tab named in the URL (gid), when supplied.
+    gid_match = re.search(r"(?:[?&#])gid=(\d+)", url)
+    if gid_match:
+        try:
+            worksheet = sheet.get_worksheet_by_id(int(gid_match.group(1)))
+            return pd.DataFrame(worksheet.get_all_records())
+        except Exception:
+            pass
+
     try:
         worksheet = sheet.worksheet(sheet_name)
     except Exception:
@@ -442,6 +452,8 @@ except Exception as exc:
 
 
 if selected_project == "Our Shopee":
+    if sheet_error:
+        st.error(f"Google Sheets connection error: {sheet_error}")
     render_our_shopee_dashboard(df_raw)
     st.stop()
 
