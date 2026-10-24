@@ -354,81 +354,158 @@ def render_our_shopee_dashboard(df):
         )
     else:
         st.success("No overdue files based on the current tracker data.")
-    if not open_work.empty:
-        with st.expander(f"View all open files ({len(open_work)})", expanded=not overdue.empty):
-            open_view = open_work[["supplier", "file", "input_skus", "delivered_skus", "remaining_skus", "start", "due_date_display", "Status", "remarks"]].copy()
-            for sku_col in ["input_skus", "delivered_skus", "remaining_skus"]:
-                open_view[sku_col] = open_view[sku_col].fillna(0).astype(int)
-            open_view["start"] = pd.to_datetime(open_view["start"], errors="coerce").dt.strftime("%d %b %Y").fillna("")
-            open_view.columns = ["Supplier Name", "Client File Name", "Input SKU Count", "Delivered SKU Count", "Remaining SKUs", "Production Start Date", "Target Delivery Date", "Status", "Remarks"]
-            def file_style(value):
-                return "background-color: #FDE2E2; color: #991B1B; font-weight: bold;" if value in set(overdue["file"]) else "background-color: #FEF3C7; color: #92400E;"
-            st.dataframe(open_view.style.map(file_style, subset=["Client File Name"]), use_container_width=True, hide_index=True)
+    st.markdown("#### 📊 Inputs & Deliveries")
+    st.caption("Filter by year, month, and week. Weeks run Monday through Sunday. Inputs are counted by Input Received Date; deliveries by Delivery Date.")
 
-    st.markdown("#### 📅 Weekly Inputs & Deliveries")
-    st.caption("Weeks run Monday through Sunday. Inputs are grouped by Input Received Date; delivered volume is grouped by Delivery Date.")
-    week_keys = sorted(set(work["received_week"].dropna().tolist()) | set(work["delivered_week"].dropna().tolist()))
-    if week_keys:
-        weekly_rows = []
-        for week_start in week_keys:
-            received_rows = work[work["received_week"] == week_start]
-            delivered_rows = work[work["delivered_week"] == week_start]
-            weekly_rows.append({
-                "Week": f"{week_start:%d %b} – {(week_start + pd.Timedelta(days=6)):%d %b %Y}",
-                "Input Files": int((received_rows["file"] != "").sum()),
-                "Input SKU Volume": int(received_rows["input_skus"].sum()),
-                "Delivered Files": int((delivered_rows["delivered_skus"] > 0).sum()),
-                "Delivered SKU Volume": int(delivered_rows["delivered_skus"].sum()),
-            })
-        st.dataframe(pd.DataFrame(weekly_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("No valid input-received or delivery dates are available for weekly summaries.")
-
-    st.markdown("#### 🗓️ Monthly Inputs & Deliveries")
-    month_keys = sorted(set(work["received_month"].loc[work["received_month"] != ""]) | set(work["delivered_month"].loc[work["delivered_month"] != ""]))
-    if month_keys:
-        monthly_rows = []
-        for month in month_keys:
-            received_rows = work[work["received_month"] == month]
-            delivered_rows = work[work["delivered_month"] == month]
-            monthly_rows.append({
-                "Month": month,
-                "Input Files": int((received_rows["file"] != "").sum()),
-                "Input SKU Volume": int(received_rows["input_skus"].sum()),
-                "Delivered Files": int((delivered_rows["delivered_skus"] > 0).sum()),
-                "Delivered SKU Volume": int(delivered_rows["delivered_skus"].sum()),
-            })
-        st.dataframe(pd.DataFrame(monthly_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("No valid input-received or delivery dates are available for monthly summaries.")
-
-    st.markdown("#### 📋 File Tracker")
-    display = pd.DataFrame({
-        "Supplier Name": work["supplier"],
-        "Client File Name": work["file"],
-        "Input Received Date": work["received"].dt.strftime("%d %b %Y").fillna(""),
-        "Input SKU Count": work["input_skus"].astype(int),
-        "Production Start Date": work["start"].dt.strftime("%d %b %Y").fillna(""),
-        "Delivery Date": work["delivery"].dt.strftime("%d %b %Y").fillna(""),
-        "Delivered SKU Count": work["delivered_skus"].astype(int),
-        "Remarks": work["remarks"],
-        "Target Delivery Date": work["due_date_display"],
-        "Remaining SKUs": work["remaining_skus"].astype(int),
-        "Status": work["Status"],
-    })
-    overdue_names = set(work.loc[work["Status"] == "Overdue", "file"])
-    def display_file_style(value):
-        if value in overdue_names:
-            return "background-color: #FDE2E2; color: #991B1B; font-weight: bold;"
-        return ""
-    st.dataframe(display.style.map(display_file_style, subset=["Client File Name"]), use_container_width=True, hide_index=True)
-    st.download_button(
-        "Download Our Shopee tracker view as CSV",
-        data=display.to_csv(index=False).encode("utf-8"),
-        file_name="our_shopee_tracker_dashboard.csv",
-        mime="text/csv",
-        key="our_shopee_download"
+    year_values = sorted(
+        set(work["received"].dropna().dt.year.astype(int).tolist())
+        | set(work["delivery"].dropna().dt.year.astype(int).tolist()),
+        reverse=True,
     )
+    f1, f2, f3 = st.columns(3)
+    selected_year = f1.selectbox("Year", ["All"] + year_values, index=0, key="os_summary_year")
+    month_options = ["All"] + [f"{m:02d} - {pd.Timestamp(2000, m, 1):%B}" for m in range(1, 13)]
+    selected_month = f2.selectbox("Month", month_options, index=0, key="os_summary_month")
+    available_week_starts = sorted(
+        set(work["received_week"].dropna().tolist())
+        | set(work["delivered_week"].dropna().tolist()),
+        reverse=True,
+    )
+    week_options = ["All"] + [
+        f"{week:%d %b %Y} – {(week + pd.Timedelta(days=6)):%d %b %Y}"
+        for week in available_week_starts
+    ]
+    selected_week = f3.selectbox("Week (Mon–Sun)", week_options, index=0, key="os_summary_week")
+
+    period_type = st.radio("Summary view", ["Monthly", "Weekly"], horizontal=True, key="os_summary_period_type")
+    selected_work = work.copy()
+    if selected_year != "All":
+        selected_work = selected_work[
+            selected_work["received"].dt.year.eq(selected_year)
+            | selected_work["delivery"].dt.year.eq(selected_year)
+        ]
+    if selected_month != "All":
+        month_number = int(selected_month[:2])
+        selected_work = selected_work[
+            selected_work["received"].dt.month.eq(month_number)
+            | selected_work["delivery"].dt.month.eq(month_number)
+        ]
+    if selected_week != "All":
+        selected_week_start = available_week_starts[week_options.index(selected_week) - 1]
+        selected_work = selected_work[
+            selected_work["received_week"].eq(selected_week_start)
+            | selected_work["delivered_week"].eq(selected_week_start)
+        ]
+
+    if period_type == "Monthly":
+        period_keys = sorted(
+            set(selected_work["received_month"].loc[selected_work["received_month"] != ""])
+            | set(selected_work["delivered_month"].loc[selected_work["delivered_month"] != ""])
+        )
+        summary_rows = []
+        for period in period_keys:
+            inputs = selected_work[selected_work["received_month"] == period]
+            outputs = selected_work[selected_work["delivered_month"] == period]
+            summary_rows.append({
+                "Period": pd.to_datetime(period + "-01").strftime("%B %Y"),
+                "Input Files": int((inputs["file"] != "").sum()),
+                "Input SKU Count": int(inputs["input_skus"].sum()),
+                "Delivered Files": int((outputs["delivered_skus"] > 0).sum()),
+                "Delivered SKU Count": int(outputs["delivered_skus"].sum()),
+                "_sort": period,
+            })
+    else:
+        period_keys = sorted(
+            set(selected_work["received_week"].dropna().tolist())
+            | set(selected_work["delivered_week"].dropna().tolist())
+        )
+        summary_rows = []
+        for period in period_keys:
+            inputs = selected_work[selected_work["received_week"] == period]
+            outputs = selected_work[selected_work["delivered_week"] == period]
+            summary_rows.append({
+                "Period": f"{period:%d %b %Y} – {(period + pd.Timedelta(days=6)):%d %b %Y}",
+                "Input Files": int((inputs["file"] != "").sum()),
+                "Input SKU Count": int(inputs["input_skus"].sum()),
+                "Delivered Files": int((outputs["delivered_skus"] > 0).sum()),
+                "Delivered SKU Count": int(outputs["delivered_skus"].sum()),
+                "_sort": period,
+            })
+    if summary_rows:
+        summary = pd.DataFrame(summary_rows).sort_values("_sort").drop(columns="_sort")
+        total_row = pd.DataFrame([{
+            "Period": "TOTAL",
+            "Input Files": int(summary["Input Files"].sum()),
+            "Input SKU Count": int(summary["Input SKU Count"].sum()),
+            "Delivered Files": int(summary["Delivered Files"].sum()),
+            "Delivered SKU Count": int(summary["Delivered SKU Count"].sum()),
+        }])
+        st.dataframe(pd.concat([summary, total_row], ignore_index=True), use_container_width=True, hide_index=True)
+    else:
+        st.info("No input or delivery records match the selected filters.")
+
+    st.markdown("#### ✨ Monthly Highlights")
+    highlight_candidates = work[work["delivery"].notna() & (work["delivered_skus"] > 0)].copy()
+    if not highlight_candidates.empty:
+        top_delivery = highlight_candidates.sort_values(
+            ["delivered_skus", "delivery"], ascending=[False, True]
+        ).iloc[0]
+        h1, h2 = st.columns(2)
+        with h1:
+            with st.container(border=True):
+                st.caption("🏆 Highest delivery")
+                st.markdown(f"**{top_delivery['file'] or 'Unnamed file'}**")
+                st.metric("Delivered SKUs", f"{int(top_delivery['delivered_skus']):,}")
+                st.caption(pd.Timestamp(top_delivery["delivery"]).strftime("%d %b %Y"))
+        highlight_candidates["delivery_days"] = (
+            highlight_candidates["delivery"].dt.normalize()
+            - highlight_candidates["start"].dt.normalize()
+        ).dt.days
+        quickest_candidates = highlight_candidates[
+            highlight_candidates["start"].notna()
+            & highlight_candidates["delivery"].notna()
+            & (highlight_candidates["delivery_days"] >= 0)
+        ].copy()
+        if not quickest_candidates.empty:
+            quickest = quickest_candidates.sort_values(
+                ["delivery_days", "delivery", "delivered_skus"],
+                ascending=[True, True, False],
+            ).iloc[0]
+            with h2:
+                with st.container(border=True):
+                    st.caption("⚡ Quickest delivery")
+                    st.markdown(f"**{quickest['file'] or 'Unnamed file'}**")
+                    duration = int(quickest["delivery_days"])
+                    st.metric("Turnaround", "Same day" if duration == 0 else f"{duration} day(s)")
+                    st.caption(
+                        f"Started {quickest['start']:%d %b %Y} · Delivered {quickest['delivery']:%d %b %Y}"
+                    )
+        else:
+            with h2:
+                with st.container(border=True):
+                    st.caption("⚡ Quickest delivery")
+                    st.info("No valid production start and delivery date pairs are available yet.")
+    else:
+        st.info("Monthly highlights will appear once files have delivery dates and delivered SKU counts.")
+
+    # Keep open files as compact individual file cards at the bottom of the page.
+    st.markdown("#### 📂 View All Open Files")
+    if not open_work.empty:
+        st.caption(f"{len(open_work)} file(s) are still in progress or awaiting a production start.")
+        for _, row in open_work.sort_values(["due_date", "received"], na_position="last").iterrows():
+            with st.container(border=True):
+                title = str(row["file"]).strip() or "Unnamed client file"
+                st.markdown(f"**{title}**")
+                card1, card2 = st.columns(2)
+                card1.caption("Input Received Date")
+                card1.write(row["received"].strftime("%d %b %Y") if pd.notna(row["received"]) else "—")
+                card2.caption("SKUs · Input / Delivered")
+                card2.write(f"{int(row['input_skus']):,} / {int(row['delivered_skus']):,}")
+                st.caption("Remarks")
+                remarks = str(row["remarks"]).strip()
+                st.write(remarks if remarks else "No remarks")
+    else:
+        st.success("No open files at the moment.")
 
 
 # ============================================================
