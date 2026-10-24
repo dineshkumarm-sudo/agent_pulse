@@ -552,116 +552,15 @@ except Exception as exc:
 df_filtered = df_raw.copy()
 
 
-if selected_project == "Our Shopee":
-    if sheet_error:
-        st.error(f"Google Sheets connection error: {sheet_error}")
-    render_our_shopee_dashboard(df_raw)
-    # Continue into the shared Agent Pulse banner and AI chat below.
-
-
-# ============================================================
-
-# AGENT PULSE AI CHAT
-# ============================================================
-
+# Keep general dashboard spacing and component styling without the AI hero/chat.
 st.markdown("""
 <style>
 .block-container {padding-top: 3rem; padding-bottom: 2rem; max-width: 1500px;}
 [data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.18);}
-.ap-hero {
-  padding: 1.7rem 1.8rem; border-radius: 22px; margin: .2rem 0 1.2rem 0;
-  color: white; background:
-  linear-gradient(110deg, rgba(13,27,52,.96) 0%, rgba(24,67,101,.92) 58%, rgba(16,125,129,.82) 100%),
-  url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1600&q=85');
-  background-size: cover; background-position: center;
-  box-shadow: 0 12px 32px rgba(15,45,70,.18);
-}
-.ap-eyebrow {font-size:.76rem; letter-spacing:.16em; text-transform:uppercase; opacity:.8; font-weight:700;}
-.ap-hero h1 {font-size:2.2rem; line-height:1.12; margin:.45rem 0 .55rem 0; color:#fff;}
-.ap-hero p {font-size:1rem; margin:0; opacity:.9; max-width:680px;}
-.ap-pill {display:inline-block; margin-top:1rem; padding:.35rem .7rem; border:1px solid rgba(255,255,255,.35); border-radius:999px; font-size:.8rem;}
 div[data-testid="stMetric"] {border:1px solid rgba(128,128,128,.18); padding:1rem 1.1rem; border-radius:16px; background:rgba(128,128,128,.035);}
 div[data-testid="stExpander"] {border-radius:14px;}
 </style>
-<div class="ap-hero">
-  <div class="ap-eyebrow">Operations intelligence · Live tracker</div>
-  <h1>Agent Pulse</h1>
-  <p>A clearer view of productivity, listing activity, and project health — all in one place.</p>
-  <span class="ap-pill">⚡ Active project: """ + selected_project + """</span>
-</div>
 """, unsafe_allow_html=True)
-st.caption("Ask questions, retrieve tracker records, compare periods, or request productivity insights.")
-
-if "agent_pulse_messages" not in st.session_state:
-    st.session_state.agent_pulse_messages = []
-
-with st.form("agent_pulse_form", clear_on_submit=True):
-    user_query = st.text_input("Ask Agent Pulse", placeholder="Bring last week's Superbreakers productivity data")
-    submitted = st.form_submit_button("Ask Agent Pulse", type="primary", use_container_width=True)
-
-if submitted:
-    if not user_query.strip():
-        st.warning("Please enter a question.")
-    elif sheet_error:
-        st.error(f"Google Sheets error: {sheet_error}")
-    elif df_filtered.empty:
-        st.warning("No Google Sheets records are available.")
-    else:
-        st.session_state.agent_pulse_messages.append({"role": "user", "content": user_query})
-        query_lower = user_query.lower()
-        asks_last_week = bool(re.search(r"\b(last[\s-]+weeks?|previous[\s-]+week)\b", query_lower))
-        asks_for_records = bool(
-            re.search(r"\b(show|bring|get|fetch|display|list|retrieve|pull)\b", query_lower)
-            or re.search(r"\b(data|records|rows|table|details)\b", query_lower)
-        )
-
-        relevant_df = df_filtered.copy()
-        filter_note = ""
-        if asks_last_week:
-            date_col = find_column(relevant_df, ["Date", "Work Date", "Log Date"])
-            if date_col:
-                relevant_df, filter_note = get_last_week_data(relevant_df, date_col)
-            else:
-                filter_note = "The sheet has no recognizable Date column, so records could not be filtered by week."
-
-        relevant_df, calculation_ok, calculation_note = calculate_productivity(relevant_df)
-        with st.spinner("Agent Pulse is checking your data..."):
-            if relevant_df.empty:
-                ai_response = "No records were found for the requested period. Please check the tracker dates."
-            else:
-                ai_response = ask_agent_pulse(
-                    user_query=user_query,
-                    df_data=relevant_df,
-                    project_name=selected_project,
-                )
-            if filter_note:
-                ai_response = f"{filter_note}\n\n{ai_response}"
-            if not calculation_ok:
-                ai_response += "\n\nProductivity calculation note: " + calculation_note
-
-        show_table = asks_for_records or asks_last_week
-        st.session_state.agent_pulse_messages.append({
-            "role": "assistant",
-            "content": ai_response,
-            "dataframe": relevant_df.copy() if show_table and not relevant_df.empty else None,
-        })
-
-for message_index, message in enumerate(st.session_state.agent_pulse_messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        table = message.get("dataframe")
-        if isinstance(table, pd.DataFrame) and not table.empty:
-            st.caption("Retrieved Google Sheets records")
-            st.dataframe(style_productivity_table(table), use_container_width=True, hide_index=True)
-            st.download_button(
-                "Download data as CSV",
-                data=dataframe_for_download(table).to_csv(index=False).encode("utf-8"),
-                file_name="agent_pulse_productivity_data.csv",
-                mime="text/csv",
-                key=f"agent_pulse_download_{message_index}",
-            )
-
-st.markdown("---")
 
 
 
@@ -759,6 +658,13 @@ elif threshold is None:
     st.info("Productivity alerts for this project will be configured when its tracker rules are provided.")
 else:
     st.info("Load tracker data to see project notifications.")
+
+# Render the Our Shopee dashboard below the Notification Center.
+if selected_project == "Our Shopee":
+    if sheet_error:
+        st.error(f"Google Sheets connection error: {sheet_error}")
+    render_our_shopee_dashboard(df_raw)
+
 
 # ============================================================
 # DASHBOARD FILTERS
