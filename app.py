@@ -801,6 +801,33 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
     if dashboard_df.empty:
         st.info("No records match the selected Year / Month / Week filters.")
     elif dashboard_calculation_ok:
+        st.markdown("### 📋 Productivity Table")
+        st.caption(
+            "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
+            "100% or above | N/A = zero/missing hours or missing listing counts."
+        )
+
+        # Append a totals row, summing numeric activity/count/hour fields and calculating overall productivity from totals.
+        total_row = {col: "" for col in dashboard_df.columns}
+        total_row[find_column(dashboard_df, ["Date", "Work Date", "Log Date"]) or dashboard_df.columns[0]] = "TOTAL"
+        for col in [new_col, existing_col, hours_col]:
+            if col:
+                total_row[col] = parse_count(dashboard_df[col]).sum()
+        if "Productivity (%)" in dashboard_df.columns:
+            total_hours = parse_count(dashboard_df[hours_col]).sum() if hours_col else 0
+            if total_hours > 0 and new_col and existing_col:
+                total_row["Productivity (%)"] = round(((total_new / 20) + (total_updates / 25)) / (total_hours / 4) * 100, 2)
+            else:
+                total_row["Productivity (%)"] = float("nan")
+        table_df = pd.concat([dashboard_df, pd.DataFrame([total_row])], ignore_index=True)
+        st.dataframe(style_productivity_table(table_df), use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download dashboard data as CSV",
+            data=dataframe_for_download(table_df).to_csv(index=False).encode("utf-8"),
+            file_name="agent_pulse_productivity.csv",
+            mime="text/csv", key="dashboard_productivity_download",
+        )
+
         st.markdown("### 📈 Listing Chart")
         chart_period = st.radio("Chart grouping", ["Week", "Month"], horizontal=True, key="dashboard_chart_period")
         build_productivity_chart(
@@ -832,32 +859,7 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
         current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
         st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
 
-        st.markdown("### 📋 Productivity Table")
-        st.caption(
-            "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
-            "100% or above | N/A = zero/missing hours or missing listing counts."
-        )
 
-        # Append a totals row, summing numeric activity/count/hour fields and calculating overall productivity from totals.
-        total_row = {col: "" for col in dashboard_df.columns}
-        total_row[find_column(dashboard_df, ["Date", "Work Date", "Log Date"]) or dashboard_df.columns[0]] = "TOTAL"
-        for col in [new_col, existing_col, hours_col]:
-            if col:
-                total_row[col] = parse_count(dashboard_df[col]).sum()
-        if "Productivity (%)" in dashboard_df.columns:
-            total_hours = parse_count(dashboard_df[hours_col]).sum() if hours_col else 0
-            if total_hours > 0 and new_col and existing_col:
-                total_row["Productivity (%)"] = round(((total_new / 20) + (total_updates / 25)) / (total_hours / 4) * 100, 2)
-            else:
-                total_row["Productivity (%)"] = float("nan")
-        table_df = pd.concat([dashboard_df, pd.DataFrame([total_row])], ignore_index=True)
-        st.dataframe(style_productivity_table(table_df), use_container_width=True, hide_index=True)
-        st.download_button(
-            "Download dashboard data as CSV",
-            data=dataframe_for_download(table_df).to_csv(index=False).encode("utf-8"),
-            file_name="agent_pulse_productivity.csv",
-            mime="text/csv", key="dashboard_productivity_download",
-        )
     else:
         st.info(
             "The tracker data is available, but productivity cannot be calculated until the required source columns are found. "
