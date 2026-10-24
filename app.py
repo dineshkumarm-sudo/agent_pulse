@@ -700,7 +700,7 @@ st.markdown("---")
 
 calculation_ok = False
 calculation_note = ""
-if not df_filtered.empty:
+if not df_filtered.empty and selected_project != "Our Shopee":
     df_filtered, calculation_ok, calculation_note = calculate_productivity(df_filtered)
     if calculation_ok:
         st.caption(
@@ -782,7 +782,7 @@ else:
 # DASHBOARD METRICS, TABLE AND CHART
 # ============================================================
 
-if not df_filtered.empty:
+if selected_project != "Our Shopee" and not df_filtered.empty:
     dashboard_df = df_filtered.copy()
     dashboard_date_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
     productivity_period = "Week"
@@ -850,7 +850,7 @@ if not df_filtered.empty:
 
     with st.expander("View raw filtered tracker data"):
         st.dataframe(df_raw, use_container_width=True, hide_index=True)
-else:
+elif selected_project != "Our Shopee":
     st.info("Select a project and adjust the filters to view the dashboard.")
 
 st.sidebar.markdown("---")
