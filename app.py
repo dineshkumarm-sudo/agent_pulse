@@ -526,6 +526,9 @@ try:
 except Exception as exc:
     sheet_error = f"{type(exc).__name__}: {exc}"
 
+# Safe default used by AI chat and tracker analysis before dashboard filters render.
+df_filtered = df_raw.copy()
+
 
 if selected_project == "Our Shopee":
     if sheet_error:
