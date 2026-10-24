@@ -299,6 +299,7 @@ def render_our_shopee_dashboard(df):
     work["remarks"] = work["remarks"].fillna("").astype(str)
     work["remaining_skus"] = (work["input_skus"] - work["delivered_skus"]).clip(lower=0)
     work["target_days"] = (work["input_skus"] / 100).apply(lambda value: int(value) if value == int(value) else int(value) + 1)
+    # The delivery clock starts from Production Start Date, not Input Received Date.
     work["due_date"] = work["start"] + pd.to_timedelta(work["target_days"], unit="D")
     today = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
 
@@ -318,8 +319,9 @@ def render_our_shopee_dashboard(df):
     work["due_date_display"] = work["due_date"].dt.strftime("%d %b %Y").fillna("—")
     work["received_week"] = work["received"].dt.to_period("W-SUN").dt.start_time
     work["delivered_week"] = work["delivery"].dt.to_period("W-SUN").dt.start_time
-    work["received_month"] = work["received"].dt.to_period("M").astype(str).replace("NaT", "")
-    work["delivered_month"] = work["delivery"].dt.to_period("M").astype(str).replace("NaT", "")
+    # Use plain YYYY-MM strings to avoid Period/NaT comparison issues in Streamlit Cloud.
+    work["received_month"] = work["received"].dt.strftime("%Y-%m").fillna("")
+    work["delivered_month"] = work["delivery"].dt.strftime("%Y-%m").fillna("")
 
     total_inputs = int(work["input_skus"].sum())
     total_delivered = int(work["delivered_skus"].sum())
