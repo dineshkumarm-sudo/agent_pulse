@@ -304,11 +304,15 @@ def render_our_shopee_dashboard(df):
     today = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
 
     def status_for(row):
+        # A recorded delivery date means the file has been delivered/closed,
+        # even when the delivered SKU count is lower because of duplicates or paused SKUs.
+        if pd.notna(row["delivery"]):
+            return "Delivered (delivery recorded)"
         if row["input_skus"] > 0 and row["delivered_skus"] >= row["input_skus"]:
             return "Delivered"
         if pd.isna(row["start"]):
             return "Awaiting production start"
-        if row["due_date"] < today:
+        if pd.notna(row["due_date"]) and row["due_date"] < today:
             return "Overdue"
         return "In progress"
 
@@ -338,6 +342,9 @@ def render_our_shopee_dashboard(df):
     if not overdue.empty:
         st.warning(f"{len(overdue)} file(s) are past their target delivery date and are not fully delivered.")
         alert_view = overdue[["supplier", "file", "input_skus", "delivered_skus", "remaining_skus", "start", "due_date_display", "remarks"]].copy()
+        for sku_col in ["input_skus", "delivered_skus", "remaining_skus"]:
+            alert_view[sku_col] = alert_view[sku_col].fillna(0).astype(int)
+        alert_view["start"] = pd.to_datetime(alert_view["start"], errors="coerce").dt.strftime("%d %b %Y").fillna("")
         alert_view.columns = ["Supplier Name", "Client File Name", "Input SKU Count", "Delivered SKU Count", "Remaining SKUs", "Production Start Date", "Target Delivery Date", "Remarks"]
         st.dataframe(
             alert_view.style.map(
@@ -350,6 +357,9 @@ def render_our_shopee_dashboard(df):
     if not open_work.empty:
         with st.expander(f"View all open files ({len(open_work)})", expanded=not overdue.empty):
             open_view = open_work[["supplier", "file", "input_skus", "delivered_skus", "remaining_skus", "start", "due_date_display", "Status", "remarks"]].copy()
+            for sku_col in ["input_skus", "delivered_skus", "remaining_skus"]:
+                open_view[sku_col] = open_view[sku_col].fillna(0).astype(int)
+            open_view["start"] = pd.to_datetime(open_view["start"], errors="coerce").dt.strftime("%d %b %Y").fillna("")
             open_view.columns = ["Supplier Name", "Client File Name", "Input SKU Count", "Delivered SKU Count", "Remaining SKUs", "Production Start Date", "Target Delivery Date", "Status", "Remarks"]
             def file_style(value):
                 return "background-color: #FDE2E2; color: #991B1B; font-weight: bold;" if value in set(overdue["file"]) else "background-color: #FEF3C7; color: #92400E;"
