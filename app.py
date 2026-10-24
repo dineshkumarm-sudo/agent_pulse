@@ -181,8 +181,8 @@ def get_last_week_data(df, date_col):
     return result, note
 
 
-def build_productivity_chart(df, alert_threshold=90, period_label="Selected period", chart_period="Day"):
-    """Plot daily New Listings and Listing Update with both counts in each hover tooltip."""
+def build_productivity_chart(df, alert_threshold=90):
+    """Plot daily New Listings and Listing Updates with both counts in each hover tooltip."""
     date_col = find_column(df, ["Date", "Work Date", "Log Date"])
     new_col = find_column(df, ["New Listings", "New Listing"])
     update_col = find_column(df, ["Listing Update"])
@@ -208,7 +208,6 @@ def build_productivity_chart(df, alert_threshold=90, period_label="Selected peri
         daily, x="_date", y="_new", markers=True,
         custom_data=["_new", "_updates"],
         labels={"_date": "Date", "_new": "New Listings"},
-        title=f"Listing Activity · {period_label} · Daily",
     )
     fig.update_traces(
         name="New Listings",
@@ -231,7 +230,7 @@ def build_productivity_chart(df, alert_threshold=90, period_label="Selected peri
     fig.update_layout(
         xaxis_title="Date", yaxis_title="Number of listings",
         hovermode="closest", legend_title="Activity",
-        margin=dict(l=20, r=20, t=60, b=20),
+        margin=dict(l=20, r=20, t=20, b=20),
     )
     st.subheader("Listing Activity Chart")
     st.plotly_chart(fig, use_container_width=True)
@@ -774,22 +773,58 @@ if not df_raw.empty and date_col:
         selected_month_number = next((m for m, label in month_labels.items() if label == selected_month), None)
         if selected_month_number is not None:
             week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
-    week_source["_AP_WEEK_START"] = week_source["_AP_DATE"] - pd.to_timedelta(week_source["_AP_DATE"].dt.weekday, unit="D")
-    week_starts = sorted(week_source["_AP_WEEK_START"].dropna().unique().tolist())
-    week_options = ["All"] + [pd.Timestamp(w).strftime("%d %b %Y") for w in week_starts]
-    current_week_label = current_monday.strftime("%d %b %Y")
+
+    # Week 1 begins on the month's first calendar day and ends on that Sunday.
+    # Each following week runs Monday through Sunday, never crossing into another month.
+    week_periods = []
+    week_lookup = {}
+    for month_number in sorted(week_source["_AP_DATE"].dt.month.dropna().unique().tolist()):
+        month_dates = week_source.loc[week_source["_AP_DATE"].dt.month == month_number, "_AP_DATE"]
+        month_start = pd.Timestamp(year=int(selected_year), month=int(month_number), day=1)
+        next_month_start = month_start + pd.offsets.MonthBegin(1)
+        first_sunday_exclusive = month_start + pd.Timedelta(days=(6 - month_start.weekday()) % 7 + 1)
+        period_starts = set()
+        for value in month_dates.dropna():
+            day = pd.Timestamp(value).normalize()
+            if day < first_sunday_exclusive:
+                period_start = month_start
+            else:
+                period_start = day - pd.Timedelta(days=day.weekday())
+            period_starts.add(period_start)
+        for week_number, period_start in enumerate(sorted(period_starts), start=1):
+            period_end = min(period_start + pd.Timedelta(days=7), next_month_start)
+            month_name = month_start.strftime("%B")
+            label = f"Week {week_number}" if selected_month != "All" else f"{month_name} - Week {week_number}"
+            week_periods.append((label, period_start, period_end, month_number))
+            week_lookup[label] = (period_start, period_end)
+
+    week_options = ["All"] + [period[0] for period in week_periods]
+    current_month_start = today_local.replace(day=1)
+    current_first_sunday_exclusive = current_month_start + pd.Timedelta(days=(6 - current_month_start.weekday()) % 7 + 1)
+    if today_local < current_first_sunday_exclusive:
+        current_period_start = current_month_start
+    else:
+        current_period_start = today_local - pd.Timedelta(days=today_local.weekday())
+    current_week_number = 1 + sum(
+        1 for _, start, _, month_number in week_periods
+        if month_number == today_local.month and start < current_period_start
+    )
+    current_week_label = (
+        f"Week {current_week_number}" if selected_month != "All"
+        else f"{today_local.strftime('%B')} - Week {current_week_number}"
+    )
     default_week = current_week_label if current_week_label in week_options else "All"
     with filter_col3:
-        selected_week = st.selectbox("Week (starting Monday)", week_options, index=week_options.index(default_week), key="dashboard_week")
+        selected_week = st.selectbox("Week", week_options, index=week_options.index(default_week), key="dashboard_week")
 
     date_mask = filter_base["_AP_DATE"].dt.year == int(selected_year)
     if selected_month != "All":
         date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
     if report_type == "Weekly Report" and selected_week != "All":
-        selected_week_start = pd.to_datetime(selected_week, format="%d %b %Y")
+        selected_week_start, selected_week_end = week_lookup[selected_week]
         date_mask &= (
             (filter_base["_AP_DATE"] >= selected_week_start)
-            & (filter_base["_AP_DATE"] < selected_week_start + pd.Timedelta(days=7))
+            & (filter_base["_AP_DATE"] < selected_week_end)
         )
     df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
     st.caption("The report type and date filters control both the productivity table and listing chart. Monthly reports use the selected year/month; weekly reports also apply the selected week.")
@@ -824,33 +859,27 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
         total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
         total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
 
-        # Append a totals row, summing numeric activity/count/hour fields and calculating overall productivity from totals.
-        total_row = {col: "" for col in dashboard_df.columns}
-        total_row[find_column(dashboard_df, ["Date", "Work Date", "Log Date"]) or dashboard_df.columns[0]] = "TOTAL"
+        # Show only the four requested tracker fields in the table and CSV.
+        date_display_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
+        display_columns = [col for col in [date_display_col, new_col, existing_col, hours_col] if col]
+        table_df = dashboard_df[display_columns].copy()
+        total_row = {col: "" for col in display_columns}
+        if date_display_col:
+            total_row[date_display_col] = "TOTAL"
         for col in [new_col, existing_col, hours_col]:
-            if col:
-                total_row[col] = parse_count(dashboard_df[col]).sum()
-        if "Productivity (%)" in dashboard_df.columns:
-            total_hours = parse_count(dashboard_df[hours_col]).sum() if hours_col else 0
-            if total_hours > 0 and new_col and existing_col:
-                total_row["Productivity (%)"] = round(((total_new / 20) + (total_updates / 25)) / (total_hours / 4) * 100, 2)
-            else:
-                total_row["Productivity (%)"] = float("nan")
-        table_df = pd.concat([dashboard_df, pd.DataFrame([total_row])], ignore_index=True)
-        st.dataframe(style_productivity_table(table_df), use_container_width=True, hide_index=True)
+            if col and col in table_df.columns:
+                total_row[col] = parse_count(table_df[col]).sum()
+        table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
+        st.dataframe(table_df, use_container_width=True, hide_index=True)
         st.download_button(
             "Download dashboard data as CSV",
-            data=dataframe_for_download(table_df).to_csv(index=False).encode("utf-8"),
+            data=table_df.to_csv(index=False).encode("utf-8"),
             file_name="agent_pulse_productivity.csv",
             mime="text/csv", key="dashboard_productivity_download",
         )
 
-        st.markdown("### 📈 Listing Chart")
-        chart_period = st.radio("Chart grouping", ["Week", "Month"], horizontal=True, key="dashboard_chart_period")
-        build_productivity_chart(
-            dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90),
-            period_label=report_type, chart_period=chart_period,
-        )
+        st.markdown("### Listing Activity Chart")
+        build_productivity_chart(dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90))
 
         numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
         valid_prod = numeric_prod.dropna()
