@@ -783,16 +783,17 @@ if not df_raw.empty and date_col:
         month_start = pd.Timestamp(year=int(selected_year), month=int(month_number), day=1)
         next_month_start = month_start + pd.offsets.MonthBegin(1)
         first_sunday_exclusive = month_start + pd.Timedelta(days=(6 - month_start.weekday()) % 7 + 1)
-        period_starts = set()
-        for value in month_dates.dropna():
-            day = pd.Timestamp(value).normalize()
-            if day < first_sunday_exclusive:
-                period_start = month_start
-            else:
-                period_start = day - pd.Timedelta(days=day.weekday())
-            period_starts.add(period_start)
-        for week_number, period_start in enumerate(sorted(period_starts), start=1):
-            period_end = min(period_start + pd.Timedelta(days=7), next_month_start)
+        # Generate every calendar week in the month, even if no tracker row exists for a week.
+        period_starts = [month_start]
+        next_period_start = first_sunday_exclusive
+        while next_period_start < next_month_start:
+            period_starts.append(next_period_start)
+            next_period_start += pd.Timedelta(days=7)
+        for week_number, period_start in enumerate(period_starts, start=1):
+            period_end = min(
+                first_sunday_exclusive if week_number == 1 else period_start + pd.Timedelta(days=7),
+                next_month_start,
+            )
             month_name = month_start.strftime("%B")
             label = f"Week {week_number}" if selected_month != "All" else f"{month_name} - Week {week_number}"
             week_periods.append((label, period_start, period_end, month_number))
