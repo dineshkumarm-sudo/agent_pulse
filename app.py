@@ -181,7 +181,7 @@ def get_last_week_data(df, date_col):
     return result, note
 
 
-def build_productivity_chart(df, alert_threshold=90):
+def build_productivity_chart(df, alert_threshold=90, period_label="Selected period"):
     if "Productivity (%)" not in df.columns:
         st.warning("Productivity chart is unavailable until the source columns are identified.")
         return
@@ -221,7 +221,7 @@ def build_productivity_chart(df, alert_threshold=90):
         chart_df, x=x_col, y="_productivity", color="_task", markers=True,
         custom_data=["_date_label", "_task", "_new", "_existing", "_hours"],
         labels={x_col: x_title, "_productivity": "Productivity (%)", "_task": "Task Type"},
-        title="Calculated Productivity by Date",
+        title=f"Calculated Productivity · {period_label}",
     )
     fig.update_traces(
         hovertemplate=(
@@ -542,7 +542,7 @@ if selected_project == "Our Shopee":
     if sheet_error:
         st.error(f"Google Sheets connection error: {sheet_error}")
     render_our_shopee_dashboard(df_raw)
-    st.stop()
+    # Continue into the shared Agent Pulse banner and AI chat below.
 
 
 # ============================================================
@@ -741,19 +741,38 @@ if st.button("Execute Tracker Analysis", type="primary"):
 
 st.markdown("### 🔔 Notification Center")
 threshold = PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project)
-if not df_filtered.empty and calculation_ok and threshold is not None:
-    current_prod = parse_productivity(df_filtered["Productivity (%)"])
-    low_prod_rows = df_filtered.loc[current_prod.notna() & (current_prod < threshold)].copy()
-    if low_prod_rows.empty:
-        st.success(f"All clear — no productivity entries below {threshold}% in the currently filtered {selected_project} data.")
+if not df_filtered.empty and threshold is not None:
+    notification_df = df_raw.copy() if selected_project == "Superbreakers" else df_filtered.copy()
+    notification_df, notification_calculation_ok, _ = calculate_productivity(notification_df)
+    notification_date_col = find_column(notification_df, ["Date", "Work Date", "Log Date"])
+    if selected_project == "Superbreakers" and notification_date_col:
+        notification_dates = parse_date_series(notification_df[notification_date_col])
+        now_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
+        month_start = now_local.replace(day=1)
+        next_month_start = month_start + pd.offsets.MonthBegin(1)
+        notification_df = notification_df.loc[
+            (notification_dates >= month_start) & (notification_dates < next_month_start)
+        ].copy()
+    if not notification_calculation_ok:
+        st.info("Productivity alerts are unavailable until the required source columns are found.")
     else:
-        st.warning(f"{len(low_prod_rows)} productivity alert(s): entries below {threshold}% for {selected_project}.")
-        show_cols = [c for c in [
-            find_column(low_prod_rows, ["Date", "Work Date", "Log Date"]),
-            find_column(low_prod_rows, ["Name", "Agent Name", "Employee Name", "Team Member"]),
-            "New Listings", "Listing Update", find_hours_column(low_prod_rows), "Productivity (%)"
-        ] if c and c in low_prod_rows.columns]
-        st.dataframe(style_productivity_table(low_prod_rows[show_cols]), use_container_width=True, hide_index=True)
+        current_prod = parse_productivity(notification_df["Productivity (%)"])
+        low_prod_rows = notification_df.loc[current_prod.notna() & (current_prod < threshold)].copy()
+        if low_prod_rows.empty:
+            if selected_project == "Superbreakers":
+                st.success(f"All clear — no productivity entries below {threshold}% for {datetime.datetime.now().strftime('%B %Y')}.")
+            else:
+                st.success(f"All clear — no productivity entries below {threshold}% in the currently filtered {selected_project} data.")
+        else:
+            period_note = f" for {datetime.datetime.now().strftime('%B %Y')}" if selected_project == "Superbreakers" else f" for {selected_project}"
+            st.warning(f"{len(low_prod_rows)} productivity alert(s): entries below {threshold}%{period_note}.")
+            show_cols = [c for c in [
+                find_column(low_prod_rows, ["Date", "Work Date", "Log Date"]),
+                find_column(low_prod_rows, ["Name", "Agent Name", "Employee Name", "Team Member"]),
+                find_column(low_prod_rows, ["New Listings", "New Listing"]),
+                find_column(low_prod_rows, ["Listing Update"]), find_hours_column(low_prod_rows), "Productivity (%)"
+            ] if c and c in low_prod_rows.columns]
+            st.dataframe(style_productivity_table(low_prod_rows[show_cols]), use_container_width=True, hide_index=True)
 elif threshold is None:
     st.info("Productivity alerts for this project will be configured when its tracker rules are provided.")
 else:
@@ -764,46 +783,75 @@ else:
 # ============================================================
 
 if not df_filtered.empty:
-    if calculation_ok:
-        numeric_prod = parse_productivity(df_filtered["Productivity (%)"])
+    dashboard_df = df_filtered.copy()
+    dashboard_date_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
+    productivity_period = "Week"
+
+    if selected_project == "Superbreakers" and dashboard_date_col:
+        productivity_period = st.radio(
+            "Productivity period", ["Week", "Month"],
+            horizontal=True, index=0, key="sb_productivity_period",
+        )
+        dashboard_dates = parse_date_series(dashboard_df[dashboard_date_col])
+        now_local = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize()
+        if productivity_period == "Week":
+            period_start = now_local - pd.Timedelta(days=now_local.weekday())
+            period_end = period_start + pd.Timedelta(days=7)
+            period_caption = f"Current week · {period_start:%d %b}–{(period_end - pd.Timedelta(days=1)):%d %b %Y}"
+        else:
+            period_start = now_local.replace(day=1)
+            period_end = period_start + pd.offsets.MonthBegin(1)
+            period_caption = f"Current month · {period_start:%B %Y}"
+        dashboard_df = dashboard_df.loc[
+            (dashboard_dates >= period_start) & (dashboard_dates < period_end)
+        ].copy()
+        st.caption(period_caption)
+
+    dashboard_df, dashboard_calculation_ok, dashboard_calculation_note = calculate_productivity(dashboard_df)
+    if dashboard_df.empty:
+        st.info(f"No records are available for the selected {productivity_period.lower()} period.")
+    elif dashboard_calculation_ok:
+        build_productivity_chart(
+            dashboard_df, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90),
+            period_label=productivity_period,
+        )
+        numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
         valid_prod = numeric_prod.dropna()
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric("Average Productivity", f"{valid_prod.mean():.2f}%" if not valid_prod.empty else "N/A")
-        kpi2.metric("Total Entries", len(df_filtered))
-
-        new_col = find_column(df_filtered, ["New Listings"])
-        existing_col = find_column(df_filtered, ["Listing Update"])
+        kpi2.metric("Total Entries", len(dashboard_df))
+        new_col = find_column(dashboard_df, ["New Listings", "New Listing"])
+        existing_col = find_column(dashboard_df, ["Listing Update"])
         if new_col and existing_col:
-            total_new = parse_count(df_filtered[new_col]).sum()
-            total_existing = parse_count(df_filtered[existing_col]).sum()
+            total_new = parse_count(dashboard_df[new_col]).sum()
+            total_existing = parse_count(dashboard_df[existing_col]).sum()
             kpi3.metric("Total Listings Processed", f"{total_new + total_existing:,.0f}")
         else:
             kpi3.metric("Total Listings Processed", "N/A")
 
-    build_productivity_chart(df_filtered, PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90))
-    st.subheader("Productivity Table")
-    if calculation_ok:
+        st.subheader("Productivity Table")
         st.caption(
-            "Red = below 95% | Orange = 95% to below 100% | No warning highlight = "
+            "Red = below 90% | Orange = 90% to below 100% | No warning highlight = "
             "100% or above | N/A = zero/missing hours or missing listing counts."
         )
-        st.dataframe(style_productivity_table(df_filtered), use_container_width=True, hide_index=True)
+        st.dataframe(style_productivity_table(dashboard_df), use_container_width=True, hide_index=True)
         st.download_button(
-            "Download filtered dashboard data as CSV",
-            data=dataframe_for_download(df_filtered).to_csv(index=False).encode("utf-8"),
-            file_name="agent_pulse_filtered_productivity.csv",
-            mime="text/csv",
-            key="dashboard_productivity_download",
+            "Download dashboard data as CSV",
+            data=dataframe_for_download(dashboard_df).to_csv(index=False).encode("utf-8"),
+            file_name="agent_pulse_productivity.csv",
+            mime="text/csv", key="dashboard_productivity_download",
         )
     else:
-        st.info("The tracker data is available, but productivity cannot be calculated until the required source columns are found.")
-        st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+        st.info(
+            "The tracker data is available, but productivity cannot be calculated until the required source columns are found. "
+            + dashboard_calculation_note
+        )
+        st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
 
     with st.expander("View raw filtered tracker data"):
         st.dataframe(df_raw, use_container_width=True, hide_index=True)
 else:
     st.info("Select a project and adjust the filters to view the dashboard.")
-
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Google Sheets Audit")
