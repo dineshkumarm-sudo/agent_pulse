@@ -810,6 +810,13 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
             "100% or above | N/A = zero/missing hours or missing listing counts."
         )
 
+        # Resolve the source columns and totals before building the TOTAL row.
+        new_col = find_column(dashboard_df, ["New Listings", "New Listing"])
+        existing_col = find_column(dashboard_df, ["Listing Update"])
+        hours_col = find_hours_column(dashboard_df)
+        total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
+        total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
+
         # Append a totals row, summing numeric activity/count/hour fields and calculating overall productivity from totals.
         total_row = {col: "" for col in dashboard_df.columns}
         total_row[find_column(dashboard_df, ["Date", "Work Date", "Log Date"]) or dashboard_df.columns[0]] = "TOTAL"
@@ -840,11 +847,6 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
 
         numeric_prod = parse_productivity(dashboard_df["Productivity (%)"])
         valid_prod = numeric_prod.dropna()
-        new_col = find_column(dashboard_df, ["New Listings", "New Listing"])
-        existing_col = find_column(dashboard_df, ["Listing Update"])
-        hours_col = find_hours_column(dashboard_df)
-        total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
-        total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
 
         # Exactly three summary tiles below the chart, reflecting the selected filters.
         kpi1, kpi2, kpi3 = st.columns(3)
