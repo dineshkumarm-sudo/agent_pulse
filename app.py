@@ -804,21 +804,21 @@ if selected_project != "Our Shopee" and not df_filtered.empty:
         total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
         total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
 
-        # Three requested summary tiles below the chart.
+        # Exactly three summary tiles below the chart, reflecting the selected filters.
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric("Average Productivity", f"{valid_prod.mean():.2f}%" if not valid_prod.empty else "N/A")
-        kpi2.metric("Total Entries", len(dashboard_df))
-        kpi3.metric("Total Listings Processed", f"{total_new + total_updates:,.0f}")
+        kpi2.metric("New Listings", f"{total_new:,.0f}")
+        kpi3.metric("Listing Updates", f"{total_updates:,.0f}")
 
-        # Additional current-calendar-month New Listings counter.
-        dashboard_date_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
+        # Keep the current-month New Listings count visible without adding a fourth tile.
+        dashboard_date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
         all_dates = parse_date_series(df_raw[dashboard_date_col]) if dashboard_date_col else pd.Series(pd.NaT, index=df_raw.index)
         month_start_now = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None).normalize().replace(day=1)
         next_month_start_now = month_start_now + pd.offsets.MonthBegin(1)
         current_month_df = df_raw.loc[(all_dates >= month_start_now) & (all_dates < next_month_start_now)]
         current_month_new_col = find_column(current_month_df, ["New Listings", "New Listing"])
         current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
-        st.metric("New Listings Done This Month", f"{current_month_new:,.0f}")
+        st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
 
         st.subheader("Productivity Table")
         st.caption(
