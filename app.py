@@ -7,9 +7,11 @@ import plotly.express as px
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import ask_agent_pulse, collate_coo_report
 from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS
+from src.ui_theme import apply_agent_pulse_theme
 
 
 st.set_page_config(page_title="Agent Pulse", page_icon="⚡", layout="wide")
+apply_agent_pulse_theme()
 
 # Center cell contents and headers in Streamlit's table and dataframe views.
 st.markdown("""
@@ -553,14 +555,6 @@ df_filtered = df_raw.copy()
 
 
 # Keep general dashboard spacing and component styling without the AI hero/chat.
-st.markdown("""
-<style>
-.block-container {padding-top: 3rem; padding-bottom: 2rem; max-width: 1500px;}
-[data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.18);}
-div[data-testid="stMetric"] {border:1px solid rgba(128,128,128,.18); padding:1rem 1.1rem; border-radius:16px; background:rgba(128,128,128,.035);}
-div[data-testid="stExpander"] {border-radius:14px;}
-</style>
-""", unsafe_allow_html=True)
 
 
 
@@ -580,6 +574,7 @@ if not df_filtered.empty and selected_project != "Our Shopee":
 # NOTIFICATION CENTER
 # ============================================================
 
+st.markdown(f"""<div style="padding: 0 0 .5rem 0;"><div style="font-size:.78rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:#3977ED;">AGENT PULSE · PROJECT OVERVIEW</div><div style="font-size:2rem;font-weight:800;letter-spacing:-.04em;color:#20264B;margin-top:.15rem;">{selected_project}</div><div style="font-size:.95rem;color:#68718A;">Operational performance, delivery status, and team productivity</div></div>""", unsafe_allow_html=True)
 st.markdown("### 🔔 Notification Center")
 
 # Keep the current-month New Listings count in the Notification Center.
