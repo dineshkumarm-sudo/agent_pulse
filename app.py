@@ -719,6 +719,11 @@ PROJECT_LOGOS = {
     "PCCG": "assets/project_icons/pccg.webp",
 }
 
+# Initialize the active project before rendering sidebar buttons so the default
+# project receives the same selected styling on the very first app load.
+if "selected_project" not in st.session_state or st.session_state["selected_project"] not in PROJECT_SHEETS:
+    st.session_state["selected_project"] = list(PROJECT_SHEETS.keys())[0]
+
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
     for project_name in PROJECT_NAMES:
         icon_col, project_col = st.columns([0.24, 0.76], vertical_alignment="center")
@@ -743,9 +748,6 @@ with st.sidebar.expander("🗂️  Project Directory", expanded=True):
         else:
             project_col.markdown(f"**{project_name}**")
             project_col.caption("Tracker connection pending")
-
-if "selected_project" not in st.session_state or st.session_state["selected_project"] not in PROJECT_SHEETS:
-    st.session_state["selected_project"] = list(PROJECT_SHEETS.keys())[0]
 
 selected_project = st.session_state["selected_project"]
 sheet_url = PROJECT_SHEETS[selected_project]
