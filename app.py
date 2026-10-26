@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import ask_agent_pulse, collate_coo_report
-from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS
+from src.project_config import PROJECT_SHEETS, PROJECT_NAMES, PRODUCTIVITY_ALERT_THRESHOLDS, PCCG_DELIVERY_SHEET_URL
 from src.ui_theme import apply_agent_pulse_theme
 
 
@@ -185,6 +185,65 @@ def fetch_sheet_safely(url, sheet_name="Daily_Tracker"):
         except Exception:
             worksheet = sheet.get_worksheet(0)
     return pd.DataFrame(worksheet.get_all_records())
+
+
+def summarize_pccg_deliveries(delivery_df):
+    """Count delivered PCCG rows by delivery date, using all required row-level filters."""
+    if delivery_df is None or delivery_df.empty:
+        return pd.DataFrame(columns=["_delivery_date", "Delivered SKUs"])
+
+    year_col = find_column(delivery_df, ["Year"])
+    date_col = find_column(delivery_df, ["Delivered on"])
+    completed_by_col = find_column(delivery_df, ["Completed By"])
+    status_col = find_column(delivery_df, ["Status"])
+    priority_col = find_column(delivery_df, ["Priority"])
+
+    required = {
+        "Year": year_col,
+        "Delivered on": date_col,
+        "Completed By": completed_by_col,
+        "Status": status_col,
+        "Priority": priority_col,
+    }
+    missing = [name for name, col in required.items() if col is None]
+    if missing:
+        raise ValueError("PCCG delivery sheet is missing required columns: " + ", ".join(missing))
+
+    work = delivery_df.copy()
+    year_values = pd.to_numeric(work[year_col], errors="coerce")
+    delivery_dates = parse_date_series(work[date_col]).dt.normalize()
+    completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
+    statuses = work[status_col].fillna("").astype(str).str.strip().str.casefold()
+
+    # Check every required field on the same row; Year is an explicit filter.
+    valid = (
+        year_values.eq(delivery_dates.dt.year)
+        & completed_by.eq("vserve")
+        & statuses.eq("delivered")
+        & delivery_dates.notna()
+    )
+    work = work.loc[valid].copy()
+    work["_delivery_date"] = delivery_dates.loc[valid]
+    work["_priority"] = work[priority_col].fillna("Unspecified").astype(str).str.strip()
+    work.loc[work["_priority"].eq(""), "_priority"] = "Unspecified"
+
+    if work.empty:
+        return pd.DataFrame(columns=["_delivery_date", "Delivered SKUs"])
+
+    totals = work.groupby("_delivery_date").size().rename("Delivered SKUs").reset_index()
+    priority_counts = (
+        work.pivot_table(
+            index="_delivery_date",
+            columns="_priority",
+            values=year_col,
+            aggfunc="size",
+            fill_value=0,
+        )
+        .add_prefix("Priority: ")
+        .reset_index()
+    )
+    result = totals.merge(priority_counts, on="_delivery_date", how="left")
+    return result
 
 
 def get_last_week_data(df, date_col):
@@ -457,8 +516,7 @@ def render_our_shopee_dashboard(df):
         st.info("No input or delivery records match the selected filters.")
 
     st.markdown("#### ✨ Monthly Highlights")
-    highlight_candidates = selected_work[selected_work["delivery"].notna() & (selected_work["delivered_skus"] > 0)].copy()
-    if not highlight_candidates.empty:
+    highlight_candidates = selected_work[selected_work["delivery"].notna() & (selected_work["delivered_skus"] > 0)].copy()    if not highlight_candidates.empty:
         top_delivery = highlight_candidates.sort_values(
             ["delivered_skus", "delivery"], ascending=[False, True]
         ).iloc[0]
@@ -549,6 +607,14 @@ try:
     df_raw = fetch_sheet_safely(sheet_url)
 except Exception as exc:
     sheet_error = f"{type(exc).__name__}: {exc}"
+
+pccg_delivery_df = pd.DataFrame()
+pccg_delivery_error = None
+if selected_project == "PCCG":
+    try:
+        pccg_delivery_df = fetch_sheet_safely(PCCG_DELIVERY_SHEET_URL)
+    except Exception as exc:
+        pccg_delivery_error = f"{type(exc).__name__}: {exc}"
 
 # Safe default used by AI chat and tracker analysis before dashboard filters render.
 df_filtered = df_raw.copy()
@@ -812,6 +878,45 @@ if selected_project != "Our Shopee":
                 ] if col
             ]
             table_df = dashboard_df[display_columns].copy()
+
+            # Match delivery counts to the exact productivity-table date. Delivery
+            # counts are filtered by Year, Delivered on, Completed By=Vserve,
+            # and Status=Delivered on the same source row.
+            if pccg_delivery_error:
+                st.warning(f"PCCG delivery data could not be loaded: {pccg_delivery_error}")
+            else:
+                try:
+                    delivery_summary = summarize_pccg_deliveries(pccg_delivery_df)
+                    table_df["_match_date"] = parse_date_series(table_df[date_display_col]).dt.normalize()
+                    if not delivery_summary.empty:
+                        table_df = table_df.merge(
+                            delivery_summary,
+                            left_on="_match_date",
+                            right_on="_delivery_date",
+                            how="left",
+                        )
+                    else:
+                        table_df["Delivered SKUs"] = 0
+                    if "Delivered SKUs" not in table_df.columns:
+                        table_df["Delivered SKUs"] = 0
+                    count_cols = [
+                        col for col in table_df.columns
+                        if col == "Delivered SKUs" or col.startswith("Priority: ")
+                    ]
+                    for count_col in count_cols:
+                        table_df[count_col] = pd.to_numeric(table_df[count_col], errors="coerce").fillna(0).astype(int)
+                    table_df = table_df.drop(
+                        columns=[col for col in ["_match_date", "_delivery_date"] if col in table_df.columns]
+                    )
+                    display_columns.extend(
+                        col for col in ["Delivered SKUs"] + sorted(
+                            c for c in table_df.columns if c.startswith("Priority: ")
+                        ) if col in table_df.columns and col not in display_columns
+                    )
+                except Exception as exc:
+                    st.warning(f"PCCG delivery counts could not be calculated: {type(exc).__name__}: {exc}")
+                    table_df["Delivered SKUs"] = "N/A"
+
             table_df["Productivity (%)"] = table_df["Productivity (%)"].map(
                 lambda value: "N/A" if pd.isna(value) else f"{value:.2f}%"
             )
@@ -820,6 +925,8 @@ if selected_project != "Our Shopee":
             total_row[production_col] = f"{total_volume:,.0f}"
             total_row[hours_col] = f"{total_hours:,.2f}".rstrip("0").rstrip(".")
             total_row["Productivity (%)"] = f"{average_productivity:.2f}%" if average_productivity is not None else "N/A"
+            for count_col in [c for c in display_columns if c == "Delivered SKUs" or c.startswith("Priority: ")]:
+                total_row[count_col] = f"{pd.to_numeric(table_df[count_col], errors='coerce').fillna(0).sum():,.0f}"
             table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
             st.dataframe(table_df, use_container_width=True, hide_index=True)
             st.download_button(
@@ -914,7 +1021,6 @@ if selected_project != "Our Shopee":
             st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
     elif selected_project != "Our Shopee":
         st.info("Select a project and adjust the filters to view the dashboard.")
-
 
 
 
