@@ -221,62 +221,50 @@ def fetch_pccg_delivery_safely(url):
 
 
 def summarize_pccg_deliveries(delivery_df):
-    """Count delivered PCCG rows by delivery date, using all required row-level filters."""
+    """Count delivery records by Delivered on date after Status and Completed By filters."""
     if delivery_df is None or delivery_df.empty:
         return pd.DataFrame(columns=["_delivery_date", "Delivered SKUs"])
 
-    year_col = find_column(delivery_df, ["Year"])
     date_col = find_column(delivery_df, ["Delivered on"])
     completed_by_col = find_column(delivery_df, ["Completed By"])
     status_col = find_column(delivery_df, ["Status"])
     priority_col = find_column(delivery_df, ["Priority"])
 
     required = {
-        "Year": year_col,
         "Delivered on": date_col,
         "Completed By": completed_by_col,
         "Status": status_col,
-        "Priority": priority_col,
     }
     missing = [name for name, col in required.items() if col is None]
     if missing:
         raise ValueError("PCCG delivery sheet is missing required columns: " + ", ".join(missing))
 
     work = delivery_df.copy()
-    year_values = pd.to_numeric(work[year_col], errors="coerce")
     delivery_dates = parse_date_series(work[date_col]).dt.normalize()
     completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
     statuses = work[status_col].fillna("").astype(str).str.strip().str.casefold()
 
-    # Check every required field on the same row; Year is an explicit filter.
-    valid = (
-        year_values.eq(delivery_dates.dt.year)
-        & completed_by.eq("vserve")
-        & statuses.eq("delivered")
-        & delivery_dates.notna()
-    )
+    # Count only rows where both conditions match on that same row.
+    valid = completed_by.eq("vserve") & statuses.eq("delivered") & delivery_dates.notna()
     work = work.loc[valid].copy()
     work["_delivery_date"] = delivery_dates.loc[valid]
-    work["_priority"] = work[priority_col].fillna("Unspecified").astype(str).str.strip()
-    work.loc[work["_priority"].eq(""), "_priority"] = "Unspecified"
 
     if work.empty:
         return pd.DataFrame(columns=["_delivery_date", "Delivered SKUs"])
 
+    # Each qualifying row is one delivery. Repeated dates therefore count multiple times.
     totals = work.groupby("_delivery_date").size().rename("Delivered SKUs").reset_index()
-    priority_counts = (
-        work.pivot_table(
-            index="_delivery_date",
-            columns="_priority",
-            values=year_col,
-            aggfunc="size",
-            fill_value=0,
+    if priority_col is not None:
+        work["_priority"] = work[priority_col].fillna("Unspecified").astype(str).str.strip()
+        work.loc[work["_priority"].eq(""), "_priority"] = "Unspecified"
+        priority_counts = (
+            work.groupby(["_delivery_date", "_priority"]).size()
+            .unstack(fill_value=0)
+            .add_prefix("Priority: ")
+            .reset_index()
         )
-        .add_prefix("Priority: ")
-        .reset_index()
-    )
-    result = totals.merge(priority_counts, on="_delivery_date", how="left")
-    return result
+        return totals.merge(priority_counts, on="_delivery_date", how="left")
+    return totals
 
 
 def get_last_week_data(df, date_col):
@@ -1055,5 +1043,4 @@ if selected_project != "Our Shopee":
             st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
     elif selected_project != "Our Shopee":
         st.info("Select a project and adjust the filters to view the dashboard.")
-
 
