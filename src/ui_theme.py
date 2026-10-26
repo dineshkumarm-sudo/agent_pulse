@@ -81,6 +81,37 @@ def apply_agent_pulse_theme():
         section[data-testid="stSidebar"] .stButton > button:hover {
             background: rgba(57,119,237,.38) !important;
             border-color: rgba(255,255,255,.35) !important;
+            animation: ap-project-bounce .42s ease;
+        }
+        /* Hide Streamlit's image hover toolbar, which appears as a white square over project logos. */
+        section[data-testid="stSidebar"] [data-testid="stImage"] button,
+        section[data-testid="stSidebar"] [data-testid="stImage"] [data-testid*="Toolbar"],
+        section[data-testid="stSidebar"] [data-testid="stImage"] [data-testid*="toolbar"] {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        /* Subtle bounce on project hover and a purple glow for the active project. */
+        @keyframes ap-project-bounce {
+            0%, 100% { transform: translateY(0); }
+            45% { transform: translateY(-4px); }
+            70% { transform: translateY(1px); }
+        }
+        @keyframes ap-purple-glow {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(161,106,232,.7), 0 0 8px rgba(161,106,232,.35); }
+            50% { box-shadow: 0 0 0 2px rgba(201,151,255,1), 0 0 15px rgba(161,106,232,.75); }
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+            background: rgba(161,106,232,.22) !important;
+            border: 1px solid #C49AFF !important;
+            color: #FFFFFF !important;
+            animation: ap-purple-glow 2s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            section[data-testid="stSidebar"] .stButton > button:hover,
+            section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+                animation: none !important;
+            }
         }
 
         /* Main cards and KPI tiles */
