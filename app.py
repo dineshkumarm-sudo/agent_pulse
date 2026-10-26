@@ -830,41 +830,6 @@ if selected_project != "Our Shopee":
                 key="pccg_productivity_download",
             )
 
-            st.markdown("### Production & Productivity Trend")
-            chart_df = dashboard_df.copy()
-            chart_df["_AP_DATE"] = parse_date_series(chart_df[date_display_col])
-            chart_df["_AP_PRODUCTION"] = parse_count(chart_df[production_col]).fillna(0)
-            chart_df["_AP_HOURS"] = parse_count(chart_df[hours_col]).fillna(0)
-            daily = chart_df.dropna(subset=["_AP_DATE"]).groupby("_AP_DATE", as_index=False).agg(
-                Production=("_AP_PRODUCTION", "sum"),
-                Hours=("_AP_HOURS", "sum"),
-            ).sort_values("_AP_DATE")
-            if daily.empty:
-                st.info("No valid dates are available to graph for this period.")
-            else:
-                daily["Productivity (%)"] = (
-                    daily["Production"] / (daily["Hours"].where(daily["Hours"] > 0) / 8 * 10) * 100
-                )
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=daily["_AP_DATE"], y=daily["Production"], mode="lines+markers",
-                    name="Production Count", yaxis="y",
-                    hovertemplate="Date: %{x|%d %b %Y}<br>Production Count: %{y:,.0f}<extra></extra>",
-                ))
-                fig.add_trace(go.Scatter(
-                    x=daily["_AP_DATE"], y=daily["Productivity (%)"], mode="lines+markers",
-                    name="Productivity (%)", yaxis="y2",
-                    hovertemplate="Date: %{x|%d %b %Y}<br>Productivity: %{y:.2f}%<extra></extra>",
-                ))
-                fig.update_layout(
-                    xaxis_title="Date",
-                    yaxis=dict(title="Production Count"),
-                    yaxis2=dict(title="Productivity (%)", overlaying="y", side="right", rangemode="tozero"),
-                    legend_title="Metric", hovermode="x unified",
-                    margin=dict(l=20, r=20, t=20, b=20),
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
             kpi1, kpi2 = st.columns(2)
             kpi1.metric("Average Productivity", f"{average_productivity:.2f}%" if average_productivity is not None else "N/A")
             kpi2.metric("Total Volume Completed", f"{total_volume:,.0f}")
