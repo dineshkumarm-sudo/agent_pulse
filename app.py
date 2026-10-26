@@ -193,14 +193,23 @@ def fetch_pccg_delivery_safely(url):
     match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
     sheet = client.open_by_key(match.group(1)) if match else client.open_by_url(url)
 
-    gid_match = re.search(r"(?:[?&#])gid=(\d+)", url)
-    worksheet = (
-        sheet.get_worksheet_by_id(int(gid_match.group(1)))
-        if gid_match else sheet.get_worksheet(0)
-    )
+    # Delivery records are specifically maintained in this named tab.
+    # Do not rely on gid=0: that may point to a different worksheet.
+    try:
+        worksheet = sheet.worksheet("High Prio - RC")
+    except Exception as exc:
+        available_tabs = ", ".join(ws.title for ws in sheet.worksheets())
+        raise ValueError(
+            "Could not find the required delivery tab 'High Prio - RC'. "
+            f"Available tabs: {available_tabs}"
+        ) from exc
+
     values = worksheet.get_all_values()
     if not values:
-        return pd.DataFrame()
+        empty_df = pd.DataFrame()
+        empty_df.attrs["worksheet_title"] = worksheet.title
+        empty_df.attrs["spreadsheet_title"] = sheet.title
+        return empty_df
 
     # get_all_records() fails when the sheet has blank headers or duplicate
     # empty strings. Build the DataFrame directly and ignore blank-header columns.
@@ -217,7 +226,10 @@ def fetch_pccg_delivery_safely(url):
     for row in values[1:]:
         padded = row + [""] * max(0, len(headers) - len(row))
         rows.append([padded[i] for i in keep_indices])
-    return pd.DataFrame(rows, columns=clean_headers)
+    result = pd.DataFrame(rows, columns=clean_headers)
+    result.attrs["worksheet_title"] = worksheet.title
+    result.attrs["spreadsheet_title"] = sheet.title
+    return result
 
 
 def summarize_pccg_deliveries(delivery_df):
@@ -909,6 +921,39 @@ if selected_project != "Our Shopee":
             else:
                 try:
                     delivery_summary = summarize_pccg_deliveries(pccg_delivery_df)
+
+                    # Transparent diagnostics to verify the exact worksheet,
+                    # source headers, and each stage of the delivery filters.
+                    with st.expander("Delivery source diagnostics", expanded=False):
+                        st.write(
+                            "Spreadsheet:",
+                            pccg_delivery_df.attrs.get("spreadsheet_title", "Not available"),
+                        )
+                        st.write(
+                            "Worksheet:",
+                            pccg_delivery_df.attrs.get("worksheet_title", "Not available"),
+                        )
+                        st.write("Rows loaded:", len(pccg_delivery_df))
+                        st.write("Columns detected:", ", ".join(map(str, pccg_delivery_df.columns)))
+                        diag_date_col = find_column(pccg_delivery_df, ["Delivered On"])
+                        diag_status_col = find_column(pccg_delivery_df, ["Status"])
+                        diag_completed_col = find_column(pccg_delivery_df, ["Completed By"])
+                        if diag_date_col and diag_status_col and diag_completed_col:
+                            diag_dates = parse_date_series(pccg_delivery_df[diag_date_col])
+                            diag_status = pccg_delivery_df[diag_status_col].fillna("").astype(str).str.strip().str.casefold()
+                            diag_completed = pccg_delivery_df[diag_completed_col].fillna("").astype(str).str.strip().str.casefold()
+                            st.write("Rows with Status = Delivered:", int(diag_status.eq("delivered").sum()))
+                            st.write("Rows with Completed By = Vserve:", int(diag_completed.eq("vserve").sum()))
+                            st.write(
+                                "Rows passing both filters with a valid delivery date:",
+                                int((diag_status.eq("delivered") & diag_completed.eq("vserve") & diag_dates.notna()).sum()),
+                            )
+                            st.write("Rows with an unparseable Delivered On date:", int(diag_dates.isna().sum()))
+                        else:
+                            st.error(
+                                "Required columns were not detected. Expected Delivered On, Status, and Completed By."
+                            )
+
                     table_df["_match_date"] = parse_date_series(table_df[date_display_col]).dt.normalize()
                     if not delivery_summary.empty:
                         table_df = table_df.merge(
