@@ -42,8 +42,24 @@ def apply_agent_pulse_theme():
         section[data-testid="stSidebar"] > div {
             background: var(--ap-indigo);
         }
-        section[data-testid="stSidebar"] * { color: #F7F8FF; }
-        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #B8C0DF; }
+        section[data-testid="stSidebar"] * {
+            color: #F7F8FF !important;
+            -webkit-text-fill-color: currentColor;
+        }
+        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
+            color: #B8C0DF !important;
+            -webkit-text-fill-color: #B8C0DF;
+        }
+        section[data-testid="stSidebar"] [data-testid="stExpander"] summary,
+        section[data-testid="stSidebar"] [data-testid="stExpander"] summary *,
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] *,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] label * {
+            color: #F7F8FF !important;
+            -webkit-text-fill-color: #F7F8FF;
+        }
         section[data-testid="stSidebar"] [data-testid="stExpander"] {
             background: rgba(255,255,255,.055);
             border: 1px solid rgba(255,255,255,.12);
