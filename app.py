@@ -808,7 +808,8 @@ next_month_start_now = month_start_now + pd.offsets.MonthBegin(1)
 current_month_df = df_raw.loc[(all_dates >= month_start_now) & (all_dates < next_month_start_now)]
 current_month_new_col = find_column(current_month_df, ["New Listings", "New Listing"])
 current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
-st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
+if selected_project != "Our Shopee":
+    st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
 
 # PCCG pending volume is sourced from delivery-sheet rows 12413 onward.
 if selected_project == "PCCG":
@@ -856,7 +857,7 @@ if not df_raw.empty and threshold is not None:
                 find_column(low_prod_rows, ["Listing Update"]), find_hours_column(low_prod_rows), "Productivity (%)"
             ] if c and c in low_prod_rows.columns]
             st.dataframe(style_productivity_table(low_prod_rows[show_cols]), use_container_width=True, hide_index=True)
-elif threshold is None:
+elif threshold is None and selected_project != "Our Shopee":
     st.info("Productivity alerts for this project will be configured when its tracker rules are provided.")
 else:
     st.info("Load tracker data to see project notifications.")
