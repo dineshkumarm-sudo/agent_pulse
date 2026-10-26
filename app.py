@@ -1043,12 +1043,14 @@ if selected_project != "Our Shopee":
                 key="pccg_productivity_download",
             )
 
-            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-            kpi1.metric("📦 Total Volume Completed", f"{total_volume:,.0f}")
-            kpi2.metric("🚚 Total Volume Delivered", f"{total_volume_delivered:,.0f}")
-            kpi3.metric("🔴 Urgent", f"{priority_totals['Urgent']:,}")
-            kpi4.metric("🟣 High Priority", f"{priority_totals['High Priority']:,}")
-            kpi5.metric("🔵 Standard", f"{priority_totals['Standard']:,}")
+            volume_kpi1, volume_kpi2 = st.columns(2)
+            volume_kpi1.metric("📦 Total Volume Completed", f"{total_volume:,.0f}")
+            volume_kpi2.metric("🚚 Total Volume Delivered", f"{total_volume_delivered:,.0f}")
+
+            priority_kpi1, priority_kpi2, priority_kpi3 = st.columns(3)
+            priority_kpi1.metric("🔴 Urgent", f"{priority_totals['Urgent']:,}")
+            priority_kpi2.metric("🟣 High Priority", f"{priority_totals['High Priority']:,}")
+            priority_kpi3.metric("🔵 Standard", f"{priority_totals['Standard']:,}")
 
     elif selected_project != "Our Shopee" and not df_filtered.empty:
         dashboard_df = df_filtered.copy()
