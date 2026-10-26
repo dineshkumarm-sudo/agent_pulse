@@ -951,39 +951,6 @@ if selected_project != "Our Shopee":
                 try:
                     delivery_summary = summarize_pccg_deliveries(pccg_delivery_df)
 
-                    # Transparent diagnostics to verify the exact worksheet,
-                    # source headers, and each stage of the delivery filters.
-                    with st.expander("Delivery source diagnostics", expanded=False):
-                        st.write(
-                            "Spreadsheet:",
-                            pccg_delivery_df.attrs.get("spreadsheet_title", "Not available"),
-                        )
-                        st.write(
-                            "Worksheet:",
-                            pccg_delivery_df.attrs.get("worksheet_title", "Not available"),
-                        )
-                        st.write("Rows loaded:", len(pccg_delivery_df))
-                        st.write("Columns detected:", ", ".join(map(str, pccg_delivery_df.columns)))
-                        diag_date_col = find_column(pccg_delivery_df, ["Delivered On"])
-                        diag_status_col = find_column(pccg_delivery_df, ["Status"])
-                        diag_completed_col = find_column(pccg_delivery_df, ["Completed By"])
-                        if diag_date_col and diag_status_col and diag_completed_col:
-                            diag_year_col = find_column(pccg_delivery_df, ["Year"])
-                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col], pccg_delivery_df[diag_year_col] if diag_year_col else None)
-                            diag_status = pccg_delivery_df[diag_status_col].fillna("").astype(str).str.strip().str.casefold()
-                            diag_completed = pccg_delivery_df[diag_completed_col].fillna("").astype(str).str.strip().str.casefold()
-                            st.write("Rows with Status = Delivered:", int(diag_status.eq("delivered").sum()))
-                            st.write("Rows with Completed By = Vserve:", int(diag_completed.eq("vserve").sum()))
-                            st.write(
-                                "Rows passing both filters with a valid delivery date:",
-                                int((diag_status.eq("delivered") & diag_completed.eq("vserve") & diag_dates.notna()).sum()),
-                            )
-                            st.write("Rows with an unparseable Delivered On date:", int(diag_dates.isna().sum()))
-                        else:
-                            st.error(
-                                "Required columns were not detected. Expected Delivered On, Status, and Completed By."
-                            )
-
                     table_df["_match_date"] = parse_date_series(table_df[date_display_col]).dt.normalize()
                     if not delivery_summary.empty:
                         table_df = table_df.merge(
@@ -1005,11 +972,12 @@ if selected_project != "Our Shopee":
                     table_df = table_df.drop(
                         columns=[col for col in ["_match_date", "_delivery_date"] if col in table_df.columns]
                     )
-                    display_columns.extend(
-                        col for col in ["Delivered SKUs"] + sorted(
-                            c for c in table_df.columns if c.startswith("Priority: ")
-                        ) if col in table_df.columns and col not in display_columns
-                    )
+                    # Show only the combined delivery total; priority columns are
+                    # breakdowns of the same deliveries and should not be displayed separately.
+                    priority_columns = [col for col in table_df.columns if col.startswith("Priority: ")]
+                    table_df = table_df.drop(columns=priority_columns, errors="ignore")
+                    if "Delivered SKUs" in table_df.columns and "Delivered SKUs" not in display_columns:
+                        display_columns.append("Delivered SKUs")
                 except Exception as exc:
                     st.warning(f"PCCG delivery counts could not be calculated: {type(exc).__name__}: {exc}")
                     table_df["Delivered SKUs"] = "N/A"
@@ -1022,8 +990,8 @@ if selected_project != "Our Shopee":
             total_row[production_col] = f"{total_volume:,.0f}"
             total_row[hours_col] = f"{total_hours:,.2f}".rstrip("0").rstrip(".")
             total_row["Productivity (%)"] = f"{average_productivity:.2f}%" if average_productivity is not None else "N/A"
-            for count_col in [c for c in display_columns if c == "Delivered SKUs" or c.startswith("Priority: ")]:
-                total_row[count_col] = f"{pd.to_numeric(table_df[count_col], errors='coerce').fillna(0).sum():,.0f}"
+            if "Delivered SKUs" in display_columns:
+                total_row["Delivered SKUs"] = f"{pd.to_numeric(table_df['Delivered SKUs'], errors='coerce').fillna(0).sum():,.0f}"
             table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
             st.dataframe(table_df, use_container_width=True, hide_index=True)
             st.download_button(
