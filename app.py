@@ -774,6 +774,20 @@ current_month_new_col = find_column(current_month_df, ["New Listings", "New List
 current_month_new = parse_count(current_month_df[current_month_new_col]).sum() if current_month_new_col else 0
 st.caption(f"New Listings Done This Month: {current_month_new:,.0f}")
 
+# PCCG pending volume is sourced from delivery-sheet rows 12413 onward.
+if selected_project == "PCCG":
+    try:
+        volume_in_hand = summarize_pccg_volume_in_hand(pccg_delivery_df)
+        st.markdown("#### 📦 Volume in Hand · PCCG")
+        st.caption("Counts rows from worksheet row 12,413 onward where Product Model (SKU) is populated and Completed By is blank or Vserve. In-House rows are excluded.")
+        hand1, hand2, hand3, hand4 = st.columns(4)
+        hand1.metric("Volume in Hand", f"{volume_in_hand['total']:,}")
+        hand2.metric("🔴 Urgent", f"{volume_in_hand['Urgent']:,}")
+        hand3.metric("🟣 High Priority", f"{volume_in_hand['High Priority']:,}")
+        hand4.metric("🔵 Standard", f"{volume_in_hand['Standard']:,}")
+    except Exception as exc:
+        st.warning(f"PCCG volume in hand could not be calculated: {type(exc).__name__}: {exc}")
+
 threshold = PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project)
 if not df_raw.empty and threshold is not None:
     notification_df = df_raw.copy()
