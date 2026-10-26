@@ -724,6 +724,11 @@ PROJECT_LOGOS = {
 if "selected_project" not in st.session_state or st.session_state["selected_project"] not in PROJECT_SHEETS:
     st.session_state["selected_project"] = list(PROJECT_SHEETS.keys())[0]
 
+def set_selected_project(project_name):
+    """Update selection before Streamlit reruns so styling matches the chosen project."""
+    st.session_state["selected_project"] = project_name
+
+
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
     for project_name in PROJECT_NAMES:
         icon_col, project_col = st.columns([0.24, 0.76], vertical_alignment="center")
@@ -738,13 +743,14 @@ with st.sidebar.expander("🗂️  Project Directory", expanded=True):
             icon_col.markdown("🟢" if project_name in PROJECT_SHEETS else "⚪")
 
         if project_name in PROJECT_SHEETS:
-            if project_col.button(
+            project_col.button(
                 project_name,
                 key=f"project_pick_{project_name}",
                 use_container_width=True,
                 type="primary" if st.session_state.get("selected_project") == project_name else "secondary",
-            ):
-                st.session_state["selected_project"] = project_name
+                on_click=set_selected_project,
+                args=(project_name,),
+            )
         else:
             project_col.markdown(f"**{project_name}**")
             project_col.caption("Tracker connection pending")
