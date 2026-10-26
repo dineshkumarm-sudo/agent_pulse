@@ -61,8 +61,27 @@ def parse_productivity(series):
 
 def parse_date_series(series):
     """Parse tracker dates such as '6-Oct-2025' consistently."""
-    # dayfirst=True correctly handles dates like 6-Oct-2025 and 06/10/2025.
-    return pd.to_datetime(series, errors="coerce", dayfirst=True)
+    # Try day-first first for the productivity tracker, then retry values that
+    # failed using month-first parsing (common in Google Sheets date formats).
+    parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    missing = parsed.isna()
+    if missing.any():
+        fallback = pd.to_datetime(series.loc[missing], errors="coerce", dayfirst=False)
+        parsed.loc[missing] = fallback
+    return parsed
+
+
+def parse_pccg_delivery_dates(series):
+    """Parse PCCG delivery dates with both common day-first and month-first formats."""
+    values = series.fillna("").astype(str).str.strip()
+    parsed_day_first = pd.to_datetime(values, errors="coerce", dayfirst=True)
+    parsed_month_first = pd.to_datetime(values, errors="coerce", dayfirst=False)
+
+    # Prefer the interpretation that successfully parses more rows. Google Sheets
+    # may expose dates as strings in either DD/MM/YYYY or MM/DD/YYYY format.
+    if parsed_month_first.notna().sum() > parsed_day_first.notna().sum():
+        return parsed_month_first
+    return parsed_day_first
 
 
 def parse_count(series):
@@ -252,7 +271,7 @@ def summarize_pccg_deliveries(delivery_df):
         raise ValueError("PCCG delivery sheet is missing required columns: " + ", ".join(missing))
 
     work = delivery_df.copy()
-    delivery_dates = parse_date_series(work[date_col]).dt.normalize()
+    delivery_dates = parse_pccg_delivery_dates(work[date_col]).dt.normalize()
     completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
     statuses = work[status_col].fillna("").astype(str).str.strip().str.casefold()
 
@@ -939,7 +958,7 @@ if selected_project != "Our Shopee":
                         diag_status_col = find_column(pccg_delivery_df, ["Status"])
                         diag_completed_col = find_column(pccg_delivery_df, ["Completed By"])
                         if diag_date_col and diag_status_col and diag_completed_col:
-                            diag_dates = parse_date_series(pccg_delivery_df[diag_date_col])
+                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col])
                             diag_status = pccg_delivery_df[diag_status_col].fillna("").astype(str).str.strip().str.casefold()
                             diag_completed = pccg_delivery_df[diag_completed_col].fillna("").astype(str).str.strip().str.casefold()
                             st.write("Rows with Status = Delivered:", int(diag_status.eq("delivered").sum()))
@@ -1088,4 +1107,3 @@ if selected_project != "Our Shopee":
             st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
     elif selected_project != "Our Shopee":
         st.info("Select a project and adjust the filters to view the dashboard.")
-
