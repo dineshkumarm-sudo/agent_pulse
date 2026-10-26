@@ -71,14 +71,23 @@ def parse_date_series(series):
     return parsed
 
 
-def parse_pccg_delivery_dates(series):
-    """Parse PCCG delivery dates with both common day-first and month-first formats."""
+def parse_pccg_delivery_dates(series, year_series=None):
+    """Parse PCCG dates, including ordinal dates like '26th-Oct' with a separate Year column."""
     values = series.fillna("").astype(str).str.strip()
+    # Strip ordinal suffixes so pandas can parse values such as 1st-Jan and 26th-Oct.
+    values = values.str.replace(r"(?i)(\\d{1,2})(st|nd|rd|th)\\b", r"\\1", regex=True)
+
+    # The delivery sheet stores some dates without a year, with the year in another column.
+    if year_series is not None:
+        years = year_series.fillna("").astype(str).str.strip()
+        has_year = values.str.contains(r"\\b\\d{4}\\b", regex=True)
+        values = values.where(has_year | years.eq(""), values + "-" + years)
+
     parsed_day_first = pd.to_datetime(values, errors="coerce", dayfirst=True)
     parsed_month_first = pd.to_datetime(values, errors="coerce", dayfirst=False)
 
     # Prefer the interpretation that successfully parses more rows. Google Sheets
-    # may expose dates as strings in either DD/MM/YYYY or MM/DD/YYYY format.
+    # may expose dates in either DD/MM/YYYY or MM/DD/YYYY format.
     if parsed_month_first.notna().sum() > parsed_day_first.notna().sum():
         return parsed_month_first
     return parsed_day_first
@@ -271,7 +280,7 @@ def summarize_pccg_deliveries(delivery_df):
         raise ValueError("PCCG delivery sheet is missing required columns: " + ", ".join(missing))
 
     work = delivery_df.copy()
-    delivery_dates = parse_pccg_delivery_dates(work[date_col]).dt.normalize()
+    year_col = find_column(work, ["Year"])\n    delivery_dates = parse_pccg_delivery_dates(work[date_col], work[year_col] if year_col else None).dt.normalize()
     completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
     statuses = work[status_col].fillna("").astype(str).str.strip().str.casefold()
 
@@ -958,7 +967,7 @@ if selected_project != "Our Shopee":
                         diag_status_col = find_column(pccg_delivery_df, ["Status"])
                         diag_completed_col = find_column(pccg_delivery_df, ["Completed By"])
                         if diag_date_col and diag_status_col and diag_completed_col:
-                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col])
+                            diag_year_col = find_column(pccg_delivery_df, ["Year"])\n                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col], pccg_delivery_df[diag_year_col] if diag_year_col else None)
                             diag_status = pccg_delivery_df[diag_status_col].fillna("").astype(str).str.strip().str.casefold()
                             diag_completed = pccg_delivery_df[diag_completed_col].fillna("").astype(str).str.strip().str.casefold()
                             st.write("Rows with Status = Delivered:", int(diag_status.eq("delivered").sum()))
