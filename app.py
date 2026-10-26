@@ -785,7 +785,6 @@ if selected_project == "PCCG":
     try:
         volume_in_hand = summarize_pccg_volume_in_hand(pccg_delivery_df)
         st.markdown("#### 📦 Volume in Hand · PCCG")
-        st.caption("Counts rows from worksheet row 12,413 onward where Product Model (SKU) is populated and Completed By is blank or Vserve. In-House rows are excluded.")
         hand1, hand2, hand3, hand4 = st.columns(4)
         hand1.metric("Volume in Hand", f"{volume_in_hand['total']:,}")
         hand2.metric("🔴 Urgent", f"{volume_in_hand['Urgent']:,}")
