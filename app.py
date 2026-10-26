@@ -942,9 +942,13 @@ if selected_project != "Our Shopee":
             ]
             table_df = dashboard_df[display_columns].copy()
 
+            # Summary tiles are based on the currently filtered productivity period.
+            total_volume_delivered = 0
+            priority_totals = {"Urgent": 0, "High Priority": 0, "Standard": 0}
+
             # Match delivery counts to the exact productivity-table date. Delivery
-            # counts are filtered by Year, Delivered on, Completed By=Vserve,
-            # and Status=Delivered on the same source row.
+            # counts are filtered by Delivered on, Completed By=Vserve, and
+            # Status=Delivered on the same source row.
             if pccg_delivery_error:
                 st.warning(f"PCCG delivery data could not be loaded: {pccg_delivery_error}")
             else:
@@ -969,6 +973,20 @@ if selected_project != "Our Shopee":
                     ]
                     for count_col in count_cols:
                         table_df[count_col] = pd.to_numeric(table_df[count_col], errors="coerce").fillna(0).astype(int)
+
+                    # Capture combined and priority-wise totals before hiding the
+                    # detailed priority columns from the productivity table.
+                    total_volume_delivered = int(table_df["Delivered SKUs"].sum())
+                    for priority_name in priority_totals:
+                        matching_cols = [
+                            col for col in table_df.columns
+                            if col.startswith("Priority: ")
+                            and col.split(":", 1)[1].strip().casefold() == priority_name.casefold()
+                        ]
+                        priority_totals[priority_name] = int(
+                            table_df[matching_cols].sum().sum()
+                        ) if matching_cols else 0
+
                     table_df = table_df.drop(
                         columns=[col for col in ["_match_date", "_delivery_date"] if col in table_df.columns]
                     )
@@ -1002,9 +1020,12 @@ if selected_project != "Our Shopee":
                 key="pccg_productivity_download",
             )
 
-            kpi1, kpi2 = st.columns(2)
-            kpi1.metric("Average Productivity", f"{average_productivity:.2f}%" if average_productivity is not None else "N/A")
-            kpi2.metric("Total Volume Completed", f"{total_volume:,.0f}")
+            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+            kpi1.metric("Total Volume Completed", f"{total_volume:,.0f}")
+            kpi2.metric("Total Volume Delivered", f"{total_volume_delivered:,.0f}")
+            kpi3.metric("Urgent", f"{priority_totals['Urgent']:,}")
+            kpi4.metric("High Priority", f"{priority_totals['High Priority']:,}")
+            kpi5.metric("Standard", f"{priority_totals['Standard']:,}")
 
     elif selected_project != "Our Shopee" and not df_filtered.empty:
         dashboard_df = df_filtered.copy()
