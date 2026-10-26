@@ -721,12 +721,12 @@ PROJECT_LOGOS = {
 
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
     for project_name in PROJECT_NAMES:
-        icon_col, project_col = st.columns([0.22, 0.78], vertical_alignment="center")
+        icon_col, project_col = st.columns([0.24, 0.76], vertical_alignment="center")
         logo_path = PROJECT_LOGOS.get(project_name)
 
         if logo_path:
             try:
-                icon_col.image(logo_path, width=36)
+                icon_col.image(logo_path, width=44)
             except Exception:
                 icon_col.markdown("🟢" if project_name in PROJECT_SHEETS else "⚪")
         else:
