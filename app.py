@@ -338,13 +338,19 @@ def summarize_pccg_volume_in_hand(delivery_df, first_sheet_row=12413):
     work = delivery_df.iloc[first_data_index:].copy()
     sku_col = find_column(work, ["Product Model (SKU)"])
     completed_by_col = find_column(work, ["Completed By"])
+    status_col = find_column(work, ["Status"])
     priority_col = find_column(work, ["Priority"])
-    if sku_col is None or completed_by_col is None:
-        raise ValueError("PCCG delivery sheet must contain 'Product Model (SKU)' and 'Completed By' columns.")
+    if sku_col is None or completed_by_col is None or status_col is None:
+        raise ValueError("PCCG delivery sheet must contain 'Product Model (SKU)', 'Completed By', and 'Status' columns.")
 
     sku = work[sku_col].fillna("").astype(str).str.strip()
     completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
-    valid = sku.ne("") & (completed_by.eq("") | completed_by.eq("vserve"))
+    status = work[status_col].fillna("").astype(str).str.strip().str.casefold()
+    valid = (
+        sku.ne("")
+        & (completed_by.eq("") | completed_by.eq("vserve"))
+        & (status.eq("") | status.eq("in progress"))
+    )
     pending = work.loc[valid].copy()
     result = dict(empty)
     result["total"] = int(len(pending))
