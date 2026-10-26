@@ -186,6 +186,39 @@ def fetch_sheet_safely(url, sheet_name="Daily_Tracker"):
             worksheet = sheet.get_worksheet(0)
     return pd.DataFrame(worksheet.get_all_records())
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_pccg_delivery_safely(url):
+    """Read PCCG delivery data while tolerating blank or duplicate worksheet headers."""
+    client = get_gsheet_client()
+    match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
+    sheet = client.open_by_key(match.group(1)) if match else client.open_by_url(url)
+
+    gid_match = re.search(r"(?:[?&#])gid=(\d+)", url)
+    worksheet = (
+        sheet.get_worksheet_by_id(int(gid_match.group(1)))
+        if gid_match else sheet.get_worksheet(0)
+    )
+    values = worksheet.get_all_values()
+    if not values:
+        return pd.DataFrame()
+
+    # get_all_records() fails when the sheet has blank headers or duplicate
+    # empty strings. Build the DataFrame directly and ignore blank-header columns.
+    headers = [str(value).strip() for value in values[0]]
+    keep_indices = [i for i, header in enumerate(headers) if header]
+    clean_headers = []
+    seen = {}
+    for i in keep_indices:
+        header = headers[i]
+        seen[header] = seen.get(header, 0) + 1
+        clean_headers.append(header if seen[header] == 1 else f"{header}_{seen[header]}")
+
+    rows = []
+    for row in values[1:]:
+        padded = row + [""] * max(0, len(headers) - len(row))
+        rows.append([padded[i] for i in keep_indices])
+    return pd.DataFrame(rows, columns=clean_headers)
+
 
 def summarize_pccg_deliveries(delivery_df):
     """Count delivered PCCG rows by delivery date, using all required row-level filters."""
@@ -613,7 +646,7 @@ pccg_delivery_df = pd.DataFrame()
 pccg_delivery_error = None
 if selected_project == "PCCG":
     try:
-        pccg_delivery_df = fetch_sheet_safely(PCCG_DELIVERY_SHEET_URL)
+        pccg_delivery_df = fetch_pccg_delivery_safely(PCCG_DELIVERY_SHEET_URL)
     except Exception as exc:
         pccg_delivery_error = f"{type(exc).__name__}: {exc}"
 
@@ -1022,6 +1055,5 @@ if selected_project != "Our Shopee":
             st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
     elif selected_project != "Our Shopee":
         st.info("Select a project and adjust the filters to view the dashboard.")
-
 
 
