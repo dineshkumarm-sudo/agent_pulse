@@ -280,7 +280,8 @@ def summarize_pccg_deliveries(delivery_df):
         raise ValueError("PCCG delivery sheet is missing required columns: " + ", ".join(missing))
 
     work = delivery_df.copy()
-    year_col = find_column(work, ["Year"])\n    delivery_dates = parse_pccg_delivery_dates(work[date_col], work[year_col] if year_col else None).dt.normalize()
+    year_col = find_column(work, ["Year"])
+    delivery_dates = parse_pccg_delivery_dates(work[date_col], work[year_col] if year_col else None).dt.normalize()
     completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
     statuses = work[status_col].fillna("").astype(str).str.strip().str.casefold()
 
@@ -967,7 +968,8 @@ if selected_project != "Our Shopee":
                         diag_status_col = find_column(pccg_delivery_df, ["Status"])
                         diag_completed_col = find_column(pccg_delivery_df, ["Completed By"])
                         if diag_date_col and diag_status_col and diag_completed_col:
-                            diag_year_col = find_column(pccg_delivery_df, ["Year"])\n                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col], pccg_delivery_df[diag_year_col] if diag_year_col else None)
+                            diag_year_col = find_column(pccg_delivery_df, ["Year"])
+                            diag_dates = parse_pccg_delivery_dates(pccg_delivery_df[diag_date_col], pccg_delivery_df[diag_year_col] if diag_year_col else None)
                             diag_status = pccg_delivery_df[diag_status_col].fillna("").astype(str).str.strip().str.casefold()
                             diag_completed = pccg_delivery_df[diag_completed_col].fillna("").astype(str).str.strip().str.casefold()
                             st.write("Rows with Status = Delivered:", int(diag_status.eq("delivered").sum()))
