@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import datetime
 import plotly.express as px
+import plotly.graph_objects as go
 
 from src.gsheets_client import get_gsheet_client, analyze_project_productivity
 from src.agent_logic import ask_agent_pulse, collate_coo_report
@@ -563,7 +564,7 @@ df_filtered = df_raw.copy()
 
 calculation_ok = False
 calculation_note = ""
-if not df_filtered.empty and selected_project != "Our Shopee":
+if not df_filtered.empty and selected_project not in ("Our Shopee", "PCCG"):
     df_filtered, calculation_ok, calculation_note = calculate_productivity(df_filtered)
     if not calculation_ok:
         st.warning(calculation_note)
@@ -637,7 +638,13 @@ if selected_project != "Our Shopee":
     # ============================================================
 
     st.markdown("### 🎛️ Dashboard Filters")
-    report_type = st.selectbox("Report Type", ["Monthly Report", "Weekly Report"], index=0, key="dashboard_report_type")
+    if selected_project == "PCCG":
+        report_type = st.radio(
+            "Report Type", ["Monthly Report", "Weekly Report"],
+            index=0, horizontal=True, key="pccg_report_type",
+        )
+    else:
+        report_type = st.selectbox("Report Type", ["Monthly Report", "Weekly Report"], index=0, key="dashboard_report_type")
     if sheet_error:
         st.error(f"Google Sheets error: {sheet_error}")
 
@@ -740,7 +747,108 @@ if selected_project != "Our Shopee":
     # DASHBOARD METRICS, TABLE AND CHART
     # ============================================================
 
-    if selected_project != "Our Shopee" and not df_filtered.empty:
+    if selected_project == "PCCG" and not df_filtered.empty:
+        dashboard_df = df_filtered.copy()
+        production_col = find_column(dashboard_df, ["Production / Image Count"])
+        hours_col = find_column(dashboard_df, ["Production Hours PCCG"])
+        date_display_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
+        missing = [
+            label for label, col in [
+                ("Production / Image Count", production_col),
+                ("Production Hours PCCG", hours_col),
+                ("Date", date_display_col),
+            ] if col is None
+        ]
+        if missing:
+            st.error("PCCG productivity cannot be calculated. Missing required columns: " + ", ".join(missing))
+            st.caption("Columns found: " + ", ".join(str(col) for col in dashboard_df.columns))
+            st.dataframe(dashboard_df, use_container_width=True, hide_index=True)
+        else:
+            production = parse_count(dashboard_df[production_col])
+            hours = parse_count(dashboard_df[hours_col])
+            valid_hours = hours.gt(0)
+            dashboard_df["Productivity (%)"] = (
+                production / (hours.where(valid_hours) / 8 * 10) * 100
+            ).where(production.notna() & valid_hours).round(2)
+
+            total_volume = production.fillna(0).sum()
+            total_hours = hours.fillna(0).sum()
+            average_productivity = (
+                total_volume / (total_hours / 8 * 10) * 100
+                if total_hours > 0 else None
+            )
+
+            st.markdown("### 📋 PCCG Productivity Table")
+            st.caption("Target: 10 production counts per 8 working hours. Productivity is calculated against actual hours recorded.")
+            display_columns = [
+                col for col in [
+                    find_column(dashboard_df, ["Month"]),
+                    find_column(dashboard_df, ["Week"]),
+                    date_display_col,
+                    production_col,
+                    hours_col,
+                    "Productivity (%)",
+                ] if col
+            ]
+            table_df = dashboard_df[display_columns].copy()
+            table_df["Productivity (%)"] = table_df["Productivity (%)"].map(
+                lambda value: "N/A" if pd.isna(value) else f"{value:.2f}%"
+            )
+            total_row = {col: "" for col in display_columns}
+            total_row[date_display_col] = "TOTAL"
+            total_row[production_col] = f"{total_volume:,.0f}"
+            total_row[hours_col] = f"{total_hours:,.2f}".rstrip("0").rstrip(".")
+            total_row["Productivity (%)"] = f"{average_productivity:.2f}%" if average_productivity is not None else "N/A"
+            table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
+            st.dataframe(table_df, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Download PCCG productivity as CSV",
+                data=table_df.to_csv(index=False).encode("utf-8"),
+                file_name="pccg_productivity.csv",
+                mime="text/csv",
+                key="pccg_productivity_download",
+            )
+
+            st.markdown("### Production & Productivity Trend")
+            chart_df = dashboard_df.copy()
+            chart_df["_AP_DATE"] = parse_date_series(chart_df[date_display_col])
+            chart_df["_AP_PRODUCTION"] = parse_count(chart_df[production_col]).fillna(0)
+            chart_df["_AP_HOURS"] = parse_count(chart_df[hours_col]).fillna(0)
+            daily = chart_df.dropna(subset=["_AP_DATE"]).groupby("_AP_DATE", as_index=False).agg(
+                Production=("_AP_PRODUCTION", "sum"),
+                Hours=("_AP_HOURS", "sum"),
+            ).sort_values("_AP_DATE")
+            if daily.empty:
+                st.info("No valid dates are available to graph for this period.")
+            else:
+                daily["Productivity (%)"] = (
+                    daily["Production"] / (daily["Hours"].where(daily["Hours"] > 0) / 8 * 10) * 100
+                )
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=daily["_AP_DATE"], y=daily["Production"], mode="lines+markers",
+                    name="Production Count", yaxis="y",
+                    hovertemplate="Date: %{x|%d %b %Y}<br>Production Count: %{y:,.0f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=daily["_AP_DATE"], y=daily["Productivity (%)"], mode="lines+markers",
+                    name="Productivity (%)", yaxis="y2",
+                    hovertemplate="Date: %{x|%d %b %Y}<br>Productivity: %{y:.2f}%<extra></extra>",
+                ))
+                fig.update_layout(
+                    xaxis_title="Date",
+                    yaxis=dict(title="Production Count"),
+                    yaxis2=dict(title="Productivity (%)", overlaying="y", side="right", rangemode="tozero"),
+                    legend_title="Metric", hovermode="x unified",
+                    margin=dict(l=20, r=20, t=20, b=20),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            kpi1, kpi2 = st.columns(2)
+            kpi1.metric("Average Productivity", f"{average_productivity:.2f}%" if average_productivity is not None else "N/A")
+            kpi2.metric("Total Volume Completed", f"{total_volume:,.0f}")
+
+    elif selected_project != "Our Shopee" and not df_filtered.empty:
         dashboard_df = df_filtered.copy()
         dashboard_df, dashboard_calculation_ok, dashboard_calculation_note = calculate_productivity(dashboard_df)
         if dashboard_df.empty:

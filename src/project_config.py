@@ -12,6 +12,11 @@ PROJECT_SHEETS = {
         "1xD37rzMdX8ugiEYSQjcT9QSaDpUDcAdxBuv2Ffk6QlY/"
         "edit?gid=30197157#gid=30197157"
     ),
+    "PCCG": (
+        "https://docs.google.com/spreadsheets/d/"
+        "1db4qSLuCNdzknqwIUZPOczZ_hMIiPPWJQ2Kz1mu2xbc/"
+        "edit?gid=0#gid=0"
+    ),
 }
 
 PROJECT_NAMES = [
