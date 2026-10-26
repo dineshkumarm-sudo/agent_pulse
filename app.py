@@ -705,7 +705,22 @@ if selected_project != "Our Shopee":
                 week_periods.append((label, period_start, period_end, month_number))
                 week_lookup[label] = (period_start, period_end)
 
-        week_options = ["All"] + [period[0] for period in week_periods]
+        # PCCG already records the reporting week in its source sheet. Use that
+        # field directly so selecting Week 4 cannot overlap with Week 5 date ranges.
+        pccg_week_col = find_column(filter_base, ["Week"]) if selected_project == "PCCG" else None
+        if pccg_week_col:
+            week_source = filter_base[filter_base["_AP_DATE"].dt.year == int(selected_year)].copy()
+            if selected_month != "All":
+                week_source = week_source[week_source["_AP_DATE"].dt.month == selected_month_number]
+            pccg_week_values = week_source[pccg_week_col].dropna().astype(str).str.strip().unique().tolist()
+            def pccg_week_sort(value):
+                match = re.search(r"(\\d+)", value)
+                return (int(match.group(1)), value.lower()) if match else (10**6, value.lower())
+            pccg_week_values = sorted(pccg_week_values, key=pccg_week_sort)
+            week_options = ["All"] + pccg_week_values
+            week_lookup = {}
+        else:
+            week_options = ["All"] + [period[0] for period in week_periods]
         current_month_start = today_local.replace(day=1)
         current_first_sunday_exclusive = current_month_start + pd.Timedelta(days=(6 - current_month_start.weekday()) % 7 + 1)
         if today_local < current_first_sunday_exclusive:
@@ -728,11 +743,17 @@ if selected_project != "Our Shopee":
         if selected_month != "All":
             date_mask &= filter_base["_AP_DATE"].dt.month == selected_month_number
         if report_type == "Weekly Report" and selected_week != "All":
-            selected_week_start, selected_week_end = week_lookup[selected_week]
-            date_mask &= (
-                (filter_base["_AP_DATE"] >= selected_week_start)
-                & (filter_base["_AP_DATE"] < selected_week_end)
-            )
+            if selected_project == "PCCG" and pccg_week_col:
+                date_mask &= (
+                    filter_base[pccg_week_col].astype(str).str.strip().str.casefold()
+                    == selected_week.strip().casefold()
+                )
+            else:
+                selected_week_start, selected_week_end = week_lookup[selected_week]
+                date_mask &= (
+                    (filter_base["_AP_DATE"] >= selected_week_start)
+                    & (filter_base["_AP_DATE"] < selected_week_end)
+                )
         df_filtered = filter_base.loc[date_mask].drop(columns=["_AP_DATE"]).copy()
         st.caption("The report type and date filters control both the productivity table and listing chart. Monthly reports use the selected year/month; weekly reports also apply the selected week.")
     elif not df_raw.empty:
