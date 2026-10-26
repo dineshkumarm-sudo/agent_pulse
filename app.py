@@ -737,6 +737,7 @@ with st.sidebar.expander("🗂️  Project Directory", expanded=True):
                 project_name,
                 key=f"project_pick_{project_name}",
                 use_container_width=True,
+                type="primary" if st.session_state.get("selected_project") == project_name else "secondary",
             ):
                 st.session_state["selected_project"] = project_name
         else:
