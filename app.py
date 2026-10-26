@@ -297,7 +297,7 @@ def summarize_pccg_deliveries(delivery_df):
     totals = work.groupby("_delivery_date").size().rename("Delivered SKUs").reset_index()
     if priority_col is not None:
         raw_priority = work[priority_col].fillna("Unspecified").astype(str).str.strip()
-        normalized_priority = raw_priority.str.casefold().str.replace(r"[_-]+", " ", regex=True).str.replace(r"\\s+", " ", regex=True).str.strip()
+        normalized_priority = raw_priority.str.casefold().str.replace(r"[_-]+", " ", regex=True).str.replace(r"\s+", " ", regex=True).str.strip()
 
         # Map source variations to the three dashboard groups while retaining any
         # other priority labels in the underlying summary for accurate total counts.
