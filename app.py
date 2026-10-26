@@ -306,10 +306,14 @@ def summarize_pccg_deliveries(delivery_df):
             "high": "High Priority",
             "high priority": "High Priority",
             "high prio": "High Priority",
-            "high-priority": "High Priority",
             "standard": "Standard",
         }
-        work["_priority"] = normalized_priority.map(priority_aliases).fillna(
+        # Handle source labels that contain extra descriptors, punctuation, or suffixes.
+        mapped_priority = normalized_priority.map(priority_aliases)
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\burgent\\b", regex=True), "Urgent")
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\bhigh\\b", regex=True), "High Priority")
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\bstandard\\b", regex=True), "Standard")
+        work["_priority"] = mapped_priority.fillna(
             raw_priority.where(raw_priority.ne(""), "Unspecified")
         )
         priority_counts = (
@@ -988,18 +992,23 @@ if selected_project != "Our Shopee":
                     for count_col in count_cols:
                         table_df[count_col] = pd.to_numeric(table_df[count_col], errors="coerce").fillna(0).astype(int)
 
-                    # Capture combined and priority-wise totals before hiding the
-                    # detailed priority columns from the productivity table.
+                    # Keep the combined delivered total on the productivity table,
+                    # but calculate priority tiles directly from the source delivery summary
+                    # for the currently selected productivity dates.
                     total_volume_delivered = int(table_df["Delivered SKUs"].sum())
-                    for priority_name in priority_totals:
-                        matching_cols = [
-                            col for col in table_df.columns
-                            if col.startswith("Priority: ")
-                            and col.split(":", 1)[1].strip().casefold() == priority_name.casefold()
+                    selected_delivery_dates = set(
+                        parse_date_series(table_df[date_display_col]).dt.normalize().dropna()
+                    )
+                    if not delivery_summary.empty and "_delivery_date" in delivery_summary.columns:
+                        period_deliveries = delivery_summary[
+                            delivery_summary["_delivery_date"].isin(selected_delivery_dates)
                         ]
-                        priority_totals[priority_name] = int(
-                            table_df[matching_cols].sum().sum()
-                        ) if matching_cols else 0
+                        for priority_name in priority_totals:
+                            priority_col_name = f"Priority: {priority_name}"
+                            if priority_col_name in period_deliveries.columns:
+                                priority_totals[priority_name] = int(
+                                    pd.to_numeric(period_deliveries[priority_col_name], errors="coerce").fillna(0).sum()
+                                )
 
                     table_df = table_df.drop(
                         columns=[col for col in ["_match_date", "_delivery_date"] if col in table_df.columns]
