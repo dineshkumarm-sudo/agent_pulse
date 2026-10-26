@@ -310,9 +310,9 @@ def summarize_pccg_deliveries(delivery_df):
         }
         # Handle source labels that contain extra descriptors, punctuation, or suffixes.
         mapped_priority = normalized_priority.map(priority_aliases)
-        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\burgent\\b", regex=True), "Urgent")
-        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\bhigh\\b", regex=True), "High Priority")
-        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\\bstandard\\b", regex=True), "Standard")
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\burgent\b", regex=True), "Urgent")
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\bhigh\b", regex=True), "High Priority")
+        mapped_priority = mapped_priority.mask(normalized_priority.str.contains(r"\bstandard\b", regex=True), "Standard")
         work["_priority"] = mapped_priority.fillna(
             raw_priority.where(raw_priority.ne(""), "Unspecified")
         )
