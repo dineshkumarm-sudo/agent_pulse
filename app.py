@@ -516,7 +516,8 @@ def render_our_shopee_dashboard(df):
         st.info("No input or delivery records match the selected filters.")
 
     st.markdown("#### ✨ Monthly Highlights")
-    highlight_candidates = selected_work[selected_work["delivery"].notna() & (selected_work["delivered_skus"] > 0)].copy()    if not highlight_candidates.empty:
+    highlight_candidates = selected_work[selected_work["delivery"].notna() & (selected_work["delivered_skus"] > 0)].copy()
+    if not highlight_candidates.empty:
         top_delivery = highlight_candidates.sort_values(
             ["delivered_skus", "delivery"], ascending=[False, True]
         ).iloc[0]
