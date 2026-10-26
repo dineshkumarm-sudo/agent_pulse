@@ -528,7 +528,6 @@ st.sidebar.title("⚡ Agent Pulse")
 st.sidebar.caption("TRACKER OPERATIONS INTELLIGENCE")
 
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
-    st.caption("Select a connected project below. More project trackers can be connected as their sheet URLs are added.")
     for project_name in PROJECT_NAMES:
         if project_name in PROJECT_SHEETS:
             if st.button(f"🟢  {project_name}", key=f"project_pick_{project_name}", use_container_width=True):
@@ -772,7 +771,7 @@ if selected_project != "Our Shopee":
                 total_row[date_display_col] = "TOTAL"
             for col in [new_col, existing_col, hours_col]:
                 if col and col in table_df.columns:
-                    total_row[col] = parse_count(table_df[col]).sum()
+                    total_row[col] = f"{parse_count(table_df[col]).sum():,.0f}"
             if show_productivity:
                 total_hours = parse_count(table_df[hours_col]).sum() if hours_col else 0
                 if total_hours > 0:
@@ -825,24 +824,3 @@ if selected_project != "Our Shopee":
 
 
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Google Sheets Audit")
-if "analysis_results" in st.session_state:
-    results = st.session_state["analysis_results"]
-    daily_alerts = results.get("daily_alerts", pd.DataFrame())
-    if isinstance(daily_alerts, pd.DataFrame) and not daily_alerts.empty:
-        for _, row in daily_alerts.iterrows():
-            name_col = find_column(pd.DataFrame(columns=row.index), ["Name", "Agent Name", "Employee Name", "Team Member"])
-            date_col = find_column(pd.DataFrame(columns=row.index), ["Date", "Work Date", "Log Date"])
-            name_val = row.get(name_col, "Team Member") if name_col else "Team Member"
-            date_val = row.get(date_col, "N/A") if date_col else "N/A"
-            score_val = row.get("Productivity (%)", "N/A")
-            score_display = f"{float(score_val):.2f}%" if pd.notna(score_val) else "N/A"
-            st.sidebar.error(
-                f"Low Productivity Flag\n\nUser: {name_val}\n\nDate: {date_val}\n\n"
-                f"Calculated Productivity: {score_display}"
-            )
-    else:
-        st.sidebar.success(f"No productivity alerts below {PRODUCTIVITY_ALERT_THRESHOLDS.get(selected_project, 90)}% were reported.")
-else:
-    st.sidebar.info("Execute tracker analysis to view audit flags.")
