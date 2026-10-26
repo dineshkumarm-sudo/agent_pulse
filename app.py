@@ -760,9 +760,12 @@ if selected_project != "Our Shopee":
             total_new = parse_count(dashboard_df[new_col]).sum() if new_col else 0
             total_updates = parse_count(dashboard_df[existing_col]).sum() if existing_col else 0
 
-            # Show only the four requested tracker fields in the table and CSV.
+            # Show productivity percentage in the Superbreakers table and CSV.
             date_display_col = find_column(dashboard_df, ["Date", "Work Date", "Log Date"])
             display_columns = [col for col in [date_display_col, new_col, existing_col, hours_col] if col]
+            show_productivity = selected_project == "Superbreakers"
+            if show_productivity:
+                display_columns.append("Productivity (%)")
             table_df = dashboard_df[display_columns].copy()
             total_row = {col: "" for col in display_columns}
             if date_display_col:
@@ -770,6 +773,18 @@ if selected_project != "Our Shopee":
             for col in [new_col, existing_col, hours_col]:
                 if col and col in table_df.columns:
                     total_row[col] = parse_count(table_df[col]).sum()
+            if show_productivity:
+                total_hours = parse_count(table_df[hours_col]).sum() if hours_col else 0
+                if total_hours > 0:
+                    total_productivity = (
+                        (total_new / 20) + (total_updates / 25)
+                    ) * (4 / total_hours) * 100
+                    total_row["Productivity (%)"] = f"{total_productivity:.2f}%"
+                else:
+                    total_row["Productivity (%)"] = "N/A"
+                table_df["Productivity (%)"] = parse_productivity(
+                    table_df["Productivity (%)"]
+                ).map(lambda value: "N/A" if pd.isna(value) else f"{value:.2f}%")
             table_df = pd.concat([table_df, pd.DataFrame([total_row])], ignore_index=True)
             st.dataframe(
                 table_df.style.set_properties(**{"text-align": "center"}),
