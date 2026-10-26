@@ -721,7 +721,7 @@ PROJECT_LOGOS = {
 
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
     for project_name in PROJECT_NAMES:
-        icon_col, project_col = st.sidebar.columns([0.22, 0.78], vertical_alignment="center")
+        icon_col, project_col = st.columns([0.22, 0.78], vertical_alignment="center")
         logo_path = PROJECT_LOGOS.get(project_name)
 
         if logo_path:
