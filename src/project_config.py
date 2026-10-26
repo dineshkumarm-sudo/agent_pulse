@@ -19,6 +19,13 @@ PROJECT_SHEETS = {
     ),
 }
 
+# PCCG delivery records are maintained separately from the productivity tracker.
+PCCG_DELIVERY_SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1rPqZbYqwl8pRBrj23gZ4kPMjIhs00v4Co9Lqg9WdV-Q/"
+    "edit?gid=0#gid=0"
+)
+
 PROJECT_NAMES = [
     "Superbreakers",
     "Our Shopee",
