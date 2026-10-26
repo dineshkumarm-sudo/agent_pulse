@@ -75,12 +75,12 @@ def parse_pccg_delivery_dates(series, year_series=None):
     """Parse PCCG dates, including ordinal dates like '26th-Oct' with a separate Year column."""
     values = series.fillna("").astype(str).str.strip()
     # Strip ordinal suffixes so pandas can parse values such as 1st-Jan and 26th-Oct.
-    values = values.str.replace(r"(?i)(\\d{1,2})(st|nd|rd|th)\\b", r"\\1", regex=True)
+    values = values.str.replace(r"(?i)(\d{1,2})(st|nd|rd|th)\b", r"\1", regex=True)
 
     # The delivery sheet stores some dates without a year, with the year in another column.
     if year_series is not None:
         years = year_series.fillna("").astype(str).str.strip()
-        has_year = values.str.contains(r"\\b\\d{4}\\b", regex=True)
+        has_year = values.str.contains(r"\b\d{4}\b", regex=True)
         values = values.where(has_year | years.eq(""), values + "-" + years)
 
     parsed_day_first = pd.to_datetime(values, errors="coerce", dayfirst=True)
