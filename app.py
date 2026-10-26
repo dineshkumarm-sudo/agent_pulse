@@ -713,14 +713,35 @@ def render_our_shopee_dashboard(df):
 st.sidebar.title("⚡ Agent Pulse")
 st.sidebar.caption("TRACKER OPERATIONS INTELLIGENCE")
 
+PROJECT_LOGOS = {
+    "Superbreakers": "assets/project_icons/superbreakers.webp",
+    "Our Shopee": "assets/project_icons/our_shopee.webp",
+    "PCCG": "assets/project_icons/pccg.webp",
+}
+
 with st.sidebar.expander("🗂️  Project Directory", expanded=True):
     for project_name in PROJECT_NAMES:
+        icon_col, project_col = st.sidebar.columns([0.22, 0.78], vertical_alignment="center")
+        logo_path = PROJECT_LOGOS.get(project_name)
+
+        if logo_path:
+            try:
+                icon_col.image(logo_path, width=36)
+            except Exception:
+                icon_col.markdown("🟢" if project_name in PROJECT_SHEETS else "⚪")
+        else:
+            icon_col.markdown("🟢" if project_name in PROJECT_SHEETS else "⚪")
+
         if project_name in PROJECT_SHEETS:
-            if st.button(f"🟢  {project_name}", key=f"project_pick_{project_name}", use_container_width=True):
+            if project_col.button(
+                project_name,
+                key=f"project_pick_{project_name}",
+                use_container_width=True,
+            ):
                 st.session_state["selected_project"] = project_name
         else:
-            st.markdown(f"⚪ **{project_name}**")
-            st.caption("Tracker connection pending")
+            project_col.markdown(f"**{project_name}**")
+            project_col.caption("Tracker connection pending")
 
 if "selected_project" not in st.session_state or st.session_state["selected_project"] not in PROJECT_SHEETS:
     st.session_state["selected_project"] = list(PROJECT_SHEETS.keys())[0]
