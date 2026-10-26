@@ -326,6 +326,46 @@ def summarize_pccg_deliveries(delivery_df):
     return totals
 
 
+
+def summarize_pccg_volume_in_hand(delivery_df, first_sheet_row=12413):
+    """Count pending PCCG SKUs from worksheet row 12413 onward, grouped by priority."""
+    empty = {"total": 0, "Urgent": 0, "High Priority": 0, "Standard": 0}
+    if delivery_df is None or delivery_df.empty:
+        return empty
+
+    # DataFrame row 0 represents worksheet row 2 because row 1 contains headers.
+    first_data_index = max(0, int(first_sheet_row) - 2)
+    work = delivery_df.iloc[first_data_index:].copy()
+    sku_col = find_column(work, ["Product Model (SKU)"])
+    completed_by_col = find_column(work, ["Completed By"])
+    priority_col = find_column(work, ["Priority"])
+    if sku_col is None or completed_by_col is None:
+        raise ValueError("PCCG delivery sheet must contain 'Product Model (SKU)' and 'Completed By' columns.")
+
+    sku = work[sku_col].fillna("").astype(str).str.strip()
+    completed_by = work[completed_by_col].fillna("").astype(str).str.strip().str.casefold()
+    valid = sku.ne("") & (completed_by.eq("") | completed_by.eq("vserve"))
+    pending = work.loc[valid].copy()
+    result = dict(empty)
+    result["total"] = int(len(pending))
+
+    if priority_col is not None and not pending.empty:
+        raw_priority = pending[priority_col].fillna("").astype(str).str.strip()
+        normalized = (
+            raw_priority.str.casefold()
+            .str.replace(r"[_-]+", " ", regex=True)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+        )
+        urgent = normalized.str.contains(r"\burgent\b", regex=True)
+        high = normalized.str.contains(r"\bhigh\b", regex=True)
+        standard = normalized.str.contains(r"\bstandard\b", regex=True)
+        result["Urgent"] = int(urgent.sum())
+        result["High Priority"] = int((~urgent & high).sum())
+        result["Standard"] = int((~urgent & ~high & standard).sum())
+    return result
+
+
 def get_last_week_data(df, date_col):
     dates = parse_date_series(df[date_col])
     today = pd.Timestamp.today().normalize()
@@ -722,7 +762,7 @@ if not df_filtered.empty and selected_project not in ("Our Shopee", "PCCG"):
 # ============================================================
 
 st.markdown(f"""<div style="padding: 0 0 .5rem 0;"><div style="font-size:.78rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:#3977ED;">AGENT PULSE · PROJECT OVERVIEW</div><div style="font-size:2rem;font-weight:800;letter-spacing:-.04em;color:#20264B;margin-top:.15rem;">{selected_project}</div><div style="font-size:.95rem;color:#68718A;">Operational performance, delivery status, and team productivity</div></div>""", unsafe_allow_html=True)
-st.markdown("### 🔔 Notification Center")
+st.markdown("### 👀 At a Glance")
 
 # Keep the current-month New Listings count in the Notification Center.
 dashboard_date_col = find_column(df_raw, ["Date", "Work Date", "Log Date"])
