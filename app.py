@@ -296,8 +296,22 @@ def summarize_pccg_deliveries(delivery_df):
     # Each qualifying row is one delivery. Repeated dates therefore count multiple times.
     totals = work.groupby("_delivery_date").size().rename("Delivered SKUs").reset_index()
     if priority_col is not None:
-        work["_priority"] = work[priority_col].fillna("Unspecified").astype(str).str.strip()
-        work.loc[work["_priority"].eq(""), "_priority"] = "Unspecified"
+        raw_priority = work[priority_col].fillna("Unspecified").astype(str).str.strip()
+        normalized_priority = raw_priority.str.casefold().str.replace(r"[_-]+", " ", regex=True).str.replace(r"\\s+", " ", regex=True).str.strip()
+
+        # Map source variations to the three dashboard groups while retaining any
+        # other priority labels in the underlying summary for accurate total counts.
+        priority_aliases = {
+            "urgent": "Urgent",
+            "high": "High Priority",
+            "high priority": "High Priority",
+            "high prio": "High Priority",
+            "high-priority": "High Priority",
+            "standard": "Standard",
+        }
+        work["_priority"] = normalized_priority.map(priority_aliases).fillna(
+            raw_priority.where(raw_priority.ne(""), "Unspecified")
+        )
         priority_counts = (
             work.groupby(["_delivery_date", "_priority"]).size()
             .unstack(fill_value=0)
@@ -1021,11 +1035,11 @@ if selected_project != "Our Shopee":
             )
 
             kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-            kpi1.metric("Total Volume Completed", f"{total_volume:,.0f}")
-            kpi2.metric("Total Volume Delivered", f"{total_volume_delivered:,.0f}")
-            kpi3.metric("Urgent", f"{priority_totals['Urgent']:,}")
-            kpi4.metric("High Priority", f"{priority_totals['High Priority']:,}")
-            kpi5.metric("Standard", f"{priority_totals['Standard']:,}")
+            kpi1.metric("📦 Total Volume Completed", f"{total_volume:,.0f}")
+            kpi2.metric("🚚 Total Volume Delivered", f"{total_volume_delivered:,.0f}")
+            kpi3.metric("🔴 Urgent", f"{priority_totals['Urgent']:,}")
+            kpi4.metric("🟣 High Priority", f"{priority_totals['High Priority']:,}")
+            kpi5.metric("🔵 Standard", f"{priority_totals['Standard']:,}")
 
     elif selected_project != "Our Shopee" and not df_filtered.empty:
         dashboard_df = df_filtered.copy()
