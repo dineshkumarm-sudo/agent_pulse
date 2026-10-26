@@ -65,6 +65,13 @@ def apply_agent_pulse_theme():
             border: 1px solid rgba(255,255,255,.12);
             border-radius: 14px;
         }
+        /* Keep the expander header tinted like the sidebar so its label stays readable. */
+        section[data-testid="stSidebar"] [data-testid="stExpander"] details,
+        section[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+            background: rgba(255,255,255,.055) !important;
+            color: #F7F8FF !important;
+            -webkit-text-fill-color: #F7F8FF !important;
+        }
         section[data-testid="stSidebar"] .stButton > button {
             background: rgba(255,255,255,.08) !important;
             color: #FFFFFF !important;
